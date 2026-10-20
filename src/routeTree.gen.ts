@@ -53,6 +53,7 @@ import { Route as ApiUsersIdAccessRouteImport } from './routes/api/users/$id/acc
 import { Route as ApiUsersIdResetPasswordRouteImport } from './routes/api/users/$id/reset-password'
 import { Route as ApiCountriesIdDiscordGuildsGuildIdRouteImport } from './routes/api/countries/$id/discord-guilds/$guildId'
 import { Route as ApiCountriesIdDiscordGuildsGuildIdChannelsRouteImport } from './routes/api/countries/$id/discord-guilds/$guildId/channels'
+import { Route as ApiCountriesIdDiscordGuildsGuildIdRolesRouteImport } from './routes/api/countries/$id/discord-guilds/$guildId/roles'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -276,6 +277,12 @@ const ApiCountriesIdDiscordGuildsGuildIdChannelsRoute =
     path: '/channels',
     getParentRoute: () => ApiCountriesIdDiscordGuildsGuildIdRoute,
   } as any)
+const ApiCountriesIdDiscordGuildsGuildIdRolesRoute =
+  ApiCountriesIdDiscordGuildsGuildIdRolesRouteImport.update({
+    id: '/roles',
+    path: '/roles',
+    getParentRoute: () => ApiCountriesIdDiscordGuildsGuildIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -321,6 +328,7 @@ export interface FileRoutesByFullPath {
   '/api/users/$id/reset-password': typeof ApiUsersIdResetPasswordRoute
   '/api/countries/$id/discord-guilds/$guildId': typeof ApiCountriesIdDiscordGuildsGuildIdRouteWithChildren
   '/api/countries/$id/discord-guilds/$guildId/channels': typeof ApiCountriesIdDiscordGuildsGuildIdChannelsRoute
+  '/api/countries/$id/discord-guilds/$guildId/roles': typeof ApiCountriesIdDiscordGuildsGuildIdRolesRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -366,6 +374,7 @@ export interface FileRoutesByTo {
   '/api/users/$id/reset-password': typeof ApiUsersIdResetPasswordRoute
   '/api/countries/$id/discord-guilds/$guildId': typeof ApiCountriesIdDiscordGuildsGuildIdRouteWithChildren
   '/api/countries/$id/discord-guilds/$guildId/channels': typeof ApiCountriesIdDiscordGuildsGuildIdChannelsRoute
+  '/api/countries/$id/discord-guilds/$guildId/roles': typeof ApiCountriesIdDiscordGuildsGuildIdRolesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -413,6 +422,7 @@ export interface FileRoutesById {
   '/api/users/$id/reset-password': typeof ApiUsersIdResetPasswordRoute
   '/api/countries/$id/discord-guilds/$guildId': typeof ApiCountriesIdDiscordGuildsGuildIdRouteWithChildren
   '/api/countries/$id/discord-guilds/$guildId/channels': typeof ApiCountriesIdDiscordGuildsGuildIdChannelsRoute
+  '/api/countries/$id/discord-guilds/$guildId/roles': typeof ApiCountriesIdDiscordGuildsGuildIdRolesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -460,6 +470,7 @@ export interface FileRouteTypes {
     | '/api/users/$id/reset-password'
     | '/api/countries/$id/discord-guilds/$guildId'
     | '/api/countries/$id/discord-guilds/$guildId/channels'
+    | '/api/countries/$id/discord-guilds/$guildId/roles'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -505,6 +516,7 @@ export interface FileRouteTypes {
     | '/api/users/$id/reset-password'
     | '/api/countries/$id/discord-guilds/$guildId'
     | '/api/countries/$id/discord-guilds/$guildId/channels'
+    | '/api/countries/$id/discord-guilds/$guildId/roles'
   id:
     | '__root__'
     | '/'
@@ -551,6 +563,7 @@ export interface FileRouteTypes {
     | '/api/users/$id/reset-password'
     | '/api/countries/$id/discord-guilds/$guildId'
     | '/api/countries/$id/discord-guilds/$guildId/channels'
+    | '/api/countries/$id/discord-guilds/$guildId/roles'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -892,6 +905,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCountriesIdDiscordGuildsGuildIdChannelsRouteImport
       parentRoute: typeof ApiCountriesIdDiscordGuildsGuildIdRoute
     }
+    '/api/countries/$id/discord-guilds/$guildId/roles': {
+      id: '/api/countries/$id/discord-guilds/$guildId/roles'
+      path: '/roles'
+      fullPath: '/api/countries/$id/discord-guilds/$guildId/roles'
+      preLoaderRoute: typeof ApiCountriesIdDiscordGuildsGuildIdRolesRouteImport
+      parentRoute: typeof ApiCountriesIdDiscordGuildsGuildIdRoute
+    }
   }
 }
 
@@ -924,12 +944,15 @@ const ApiBlockedSubmittersRouteWithChildren =
 
 interface ApiCountriesIdDiscordGuildsGuildIdRouteChildren {
   ApiCountriesIdDiscordGuildsGuildIdChannelsRoute: typeof ApiCountriesIdDiscordGuildsGuildIdChannelsRoute
+  ApiCountriesIdDiscordGuildsGuildIdRolesRoute: typeof ApiCountriesIdDiscordGuildsGuildIdRolesRoute
 }
 
 const ApiCountriesIdDiscordGuildsGuildIdRouteChildren: ApiCountriesIdDiscordGuildsGuildIdRouteChildren =
   {
     ApiCountriesIdDiscordGuildsGuildIdChannelsRoute:
       ApiCountriesIdDiscordGuildsGuildIdChannelsRoute,
+    ApiCountriesIdDiscordGuildsGuildIdRolesRoute:
+      ApiCountriesIdDiscordGuildsGuildIdRolesRoute,
   }
 
 const ApiCountriesIdDiscordGuildsGuildIdRouteWithChildren =

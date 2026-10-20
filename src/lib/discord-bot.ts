@@ -9,10 +9,12 @@ import { encryptSecret, decryptSecret } from './crypto'
 const API = 'https://discord.com/api/v10'
 
 // View Channel, Send Messages, Embed Links, Send Messages in Threads (also needed to create
-// forum posts), Create Public Threads (for threaded channels), and Mention Everyone (so
-// @here/@everyone/role mentions in a channel's custom prefix actually ping — the inviting admin
-// can untick it).
-const BOT_PERMISSIONS = (1n << 10n) | (1n << 11n) | (1n << 14n) | (1n << 38n) | (1n << 35n) | (1n << 17n)
+// forum posts), Create Public Threads and Manage Threads (for threaded channels — archiving a
+// thread from the Close thread button needs Manage Threads, even one the bot started), and
+// Mention Everyone (so @here/@everyone/role mentions in a channel's custom prefix actually ping
+// — the inviting admin can untick it).
+const BOT_PERMISSIONS =
+  (1n << 10n) | (1n << 11n) | (1n << 14n) | (1n << 38n) | (1n << 35n) | (1n << 34n) | (1n << 17n)
 
 // Text, announcement and forum channels — the ones the bot can post a notification into.
 export const POSTABLE_CHANNEL_TYPES = [0, 5, 15]
@@ -175,6 +177,26 @@ export async function verifyInteraction(request: Request, body: string) {
   } catch {
     return false
   }
+}
+
+export interface GuildRole {
+  id: string
+  name: string
+  color: number
+}
+
+/**
+ * The server's pingable roles, highest first — minus @everyone (its id is the server's; the
+ * prefix can still say @everyone/@here) and roles managed by integrations, like bots' own roles.
+ */
+export async function listGuildRoles(guildId: string): Promise<GuildRole[]> {
+  const all = await discordApi<Array<GuildRole & { position: number; managed: boolean }>>(
+    `/guilds/${encodeURIComponent(guildId)}/roles`,
+  )
+  return all
+    .filter((r) => r.id !== guildId && !r.managed)
+    .sort((a, b) => b.position - a.position)
+    .map((r) => ({ id: r.id, name: r.name, color: r.color }))
 }
 
 /** Throws (e.g. "Missing Access", "Unknown Channel") if the bot can't see the channel. */

@@ -56,6 +56,8 @@ export interface Channel {
   discord_guild_id: string | null
   discord_channel_id: string | null
   discord_threaded: number
+  // discord_bot only — comma-separated role ids pinged in every notification.
+  discord_role_ids: string | null
 }
 
 export interface Credential {
@@ -164,6 +166,13 @@ export interface DiscordGuild {
   guild_name: string
   added_by: string | null
   created_at: string
+}
+
+// A pingable role in a linked Discord server.
+export interface DiscordGuildRole {
+  id: string
+  name: string
+  color: number
 }
 
 // A postable channel in a linked Discord server. type: 0 text, 5 announcement, 15 forum.

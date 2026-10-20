@@ -10,6 +10,7 @@ import type {
   CredentialType,
   DiscordGuild,
   DiscordGuildChannel,
+  DiscordGuildRole,
   Me,
   PushSubscription,
   Region,
@@ -213,6 +214,7 @@ export interface ChannelFormValues {
   discord_guild_id: string | null
   discord_channel_id: string | null
   discord_threaded: boolean
+  discord_role_ids: string[]
 }
 
 export function useCreateChannel() {
@@ -268,6 +270,15 @@ export function useDiscordGuildChannels(countryId: string | null, guildId: strin
   return useQuery({
     queryKey: ['discord-guild-channels', countryId, guildId],
     queryFn: () => apiFetch<DiscordGuildChannel[]>(`/countries/${countryId}/discord-guilds/${guildId}/channels`),
+    enabled: !!countryId && !!guildId,
+    retry: false,
+  })
+}
+
+export function useDiscordGuildRoles(countryId: string | null, guildId: string | null) {
+  return useQuery({
+    queryKey: ['discord-guild-roles', countryId, guildId],
+    queryFn: () => apiFetch<DiscordGuildRole[]>(`/countries/${countryId}/discord-guilds/${guildId}/roles`),
     enabled: !!countryId && !!guildId,
     retry: false,
   })

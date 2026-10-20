@@ -87,6 +87,7 @@ This applies everything under [`migrations/`](migrations/):
 | `0026_superadmin.sql` | `user_access.is_superadmin` — the only level allowed to edit (name, code) or delete countries; set in the database only (see step 12) |
 | `0028_discord_bot_channel.sql` | `discord_bot` notification platform + `notification_channels.discord_guild_id`/`discord_channel_id`, and `discord_guilds` — the Discord servers each country has added the bot to (see step 8) |
 | `0029_discord_bot_threaded.sql` | `notification_channels.discord_threaded` — the Discord (Bot) "thread requests from the same submitter" option |
+| `0030_discord_bot_roles.sql` | `notification_channels.discord_role_ids` — roles a Discord (Bot) channel pings in every notification |
 
 You'll re-run `db:migrate:remote` any time you pull a future update that adds a new migration file — `wrangler d1 migrations apply` only applies migrations that haven't run yet, so it's always safe to re-run.
 
@@ -166,7 +167,7 @@ of this. ("Sign in with Discord" is separate and lives on the account service.)
    deploy first. Channels with "Thread requests from the same submitter" ticked then get
    **Complete**, **Reject** and **Close thread** buttons on each request; anyone with Manage
    Threads in the channel can use them. Complete/Reject set the request's status here; Close
-   thread archives the thread and makes that submitter's next request start a new one.
+   thread archives and locks the thread and makes that submitter's next request start a new one.
 
 How servers get linked: **Add bot** in the channel form opens Discord's
 "Add to server" page (an OAuth2 code-grant install). Discord redirects back to
@@ -175,10 +176,11 @@ encrypted with `CHANNEL_CREDENTIALS_KEY`, so set that from step 9 too) and recor
 Discord reports in `discord_guilds` for that country. Channels can only be picked from servers
 linked to their own country, since one bot is shared by every country. The bot asks for View
 Channel, Send Messages, Embed Links, Send Messages in Threads (for forum posts), Create Public
-Threads (for threaded channels) and Mention Everyone (so `@here`/role mentions in a channel's
+Threads and Manage Threads (for threaded channels) and Mention Everyone (so `@here`/role mentions in a channel's
 prefix ping); the admin adding it can untick any of these. Servers added before Create Public
-Threads was requested need it granted to the bot's role (or the bot re-added) for threading in
-text channels — until then those notifications post as separate messages.
+Threads and Manage Threads were requested need them granted to the bot's role (or the bot
+re-added): without Create Public Threads, text-channel notifications post as separate messages;
+without Manage Threads, the Close thread button can't archive the thread.
 
 ## 9 — Configure the Credentials Manager (optional)
 

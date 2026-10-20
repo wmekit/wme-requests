@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Button, Checkbox, Code, Group, Loader, Modal, Select, Stack, Text, TextInput } from '@mantine/core'
+import { Button, Checkbox, Code, Group, Loader, Modal, MultiSelect, Select, Stack, Text, TextInput } from '@mantine/core'
 import { Plus } from 'lucide-react'
 import { useForm } from '@mantine/form'
 import {
   useCreateChannel,
   useCredentials,
   useDiscordGuildChannels,
+  useDiscordGuildRoles,
   useDiscordGuilds,
   useRegions,
   useUpdateChannel,
@@ -64,6 +65,7 @@ const EMPTY_VALUES: ChannelFormValues = {
   discord_guild_id: null,
   discord_channel_id: null,
   discord_threaded: false,
+  discord_role_ids: [],
 }
 
 // Select data for a Discord server's channels: uncategorised ones first, then one group per
@@ -148,6 +150,7 @@ export default function ChannelFormModal({ opened, onClose, countryId, channel }
               discord_guild_id: channel.discord_guild_id,
               discord_channel_id: channel.discord_channel_id,
               discord_threaded: !!channel.discord_threaded,
+              discord_role_ids: channel.discord_role_ids?.split(',') ?? [],
             }
           : EMPTY_VALUES,
       )
@@ -159,6 +162,10 @@ export default function ChannelFormModal({ opened, onClose, countryId, channel }
   const discordGuildsQuery = useDiscordGuilds(countryId, opened && form.values.platform === 'discord_bot')
   const discordGuilds = discordGuildsQuery.data ?? []
   const discordChannelsQuery = useDiscordGuildChannels(
+    countryId,
+    opened && form.values.platform === 'discord_bot' ? form.values.discord_guild_id : null,
+  )
+  const discordRolesQuery = useDiscordGuildRoles(
     countryId,
     opened && form.values.platform === 'discord_bot' ? form.values.discord_guild_id : null,
   )
@@ -195,6 +202,7 @@ export default function ChannelFormModal({ opened, onClose, countryId, channel }
       discord_guild_id: values.platform === 'discord_bot' ? values.discord_guild_id : null,
       discord_channel_id: values.platform === 'discord_bot' ? values.discord_channel_id : null,
       discord_threaded: values.platform === 'discord_bot' ? values.discord_threaded : false,
+      discord_role_ids: values.platform === 'discord_bot' ? values.discord_role_ids : [],
     }
     try {
       if (isEdit && channel) {
@@ -323,6 +331,7 @@ export default function ChannelFormModal({ opened, onClose, countryId, channel }
                     onChange={(v) => {
                       form.setFieldValue('discord_guild_id', v)
                       form.setFieldValue('discord_channel_id', null)
+                      form.setFieldValue('discord_role_ids', [])
                     }}
                     error={form.errors.discord_guild_id}
                     disabled={saving || !discordGuilds.length}
@@ -353,6 +362,19 @@ export default function ChannelFormModal({ opened, onClose, countryId, channel }
                     (discordChannelsQuery.error ? discordChannelsQuery.error.message : undefined)
                   }
                   rightSection={discordChannelsQuery.isFetching ? <Loader size="xs" /> : undefined}
+                  disabled={saving || !form.values.discord_guild_id}
+                />
+                <MultiSelect
+                  label="Roles to ping (optional)"
+                  placeholder={form.values.discord_guild_id ? 'Select roles…' : 'Select a server first'}
+                  description="Mentioned at the start of every notification, ahead of the custom prefix."
+                  data={(discordRolesQuery.data ?? []).map((r) => ({ value: r.id, label: `@${r.name}` }))}
+                  searchable
+                  clearable
+                  value={form.values.discord_role_ids}
+                  onChange={(v) => form.setFieldValue('discord_role_ids', v)}
+                  error={discordRolesQuery.error ? discordRolesQuery.error.message : undefined}
+                  rightSection={discordRolesQuery.isFetching ? <Loader size="xs" /> : undefined}
                   disabled={saving || !form.values.discord_guild_id}
                 />
                 <Checkbox

@@ -67,6 +67,9 @@ const SECTIONS: HelpSection[] = [
         is private. Forum channels get a new post per notification.
       </>,
       <>
+        Optionally pick <strong>Roles to ping</strong> — they're mentioned at the start of every notification.
+      </>,
+      <>
         Optionally tick <strong>Thread requests from the same submitter</strong> — consecutive requests from one
         submitter on the same day then go into a single thread (or forum post) instead of separate messages. Each
         request gets <strong>Complete</strong>, <strong>Reject</strong> and <strong>Close thread</strong> buttons,

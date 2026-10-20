@@ -4,7 +4,7 @@ import { sendTestMessage, type NotificationChannel } from './notifications'
 import { canAccessCountry, type UserAccess } from './access'
 import { credentialExists } from './credentials'
 import { isGuildLinked } from './discord-guilds'
-import { getChannel, FORUM_CHANNEL_TYPE, POSTABLE_CHANNEL_TYPES } from './discord-bot'
+import { getChannel, listGuildRoles, FORUM_CHANNEL_TYPE, POSTABLE_CHANNEL_TYPES } from './discord-bot'
 
 export async function getChannels(access: UserAccess, countryId: number) {
   const country = await dbFirst('SELECT id FROM countries WHERE id = ?', [countryId])
@@ -43,6 +43,8 @@ interface ChannelBody {
   discord_channel_id?: string | null
   // discord_bot only — thread same-submitter requests, see sendDiscordBot.
   discord_threaded?: boolean
+  // discord_bot only — roles in the channel's server to ping in every notification.
+  discord_role_ids?: string[] | null
 }
 
 // Resolves+validates an optional region_id against the channel's country. Returns the
@@ -92,6 +94,27 @@ async function resolveDiscordBotChannel(
     return { error: 'Pick a text, announcement or forum channel' }
   }
   return { guildId, channelId, forum: channel.type === FORUM_CHANNEL_TYPE }
+}
+
+// For discord_bot: every role must exist in the channel's server (and not be @everyone or an
+// integration's role — see listGuildRoles). Stored comma-separated, or null for none.
+async function resolveDiscordRoles(
+  guildId: string,
+  roleIds: string[] | null | undefined,
+): Promise<{ value: string | null } | { error: string }> {
+  if (!roleIds?.length) return { value: null }
+  if (!Array.isArray(roleIds) || !roleIds.every((id) => typeof id === 'string' && /^\d+$/.test(id))) {
+    return { error: 'discord_role_ids must be a list of role IDs' }
+  }
+  let roles
+  try {
+    roles = await listGuildRoles(guildId)
+  } catch (e) {
+    return { error: `Can't load that Discord server's roles — ${(e as Error).message}` }
+  }
+  const valid = new Set(roles.map((r) => r.id))
+  if (roleIds.some((id) => !valid.has(id))) return { error: 'One of those roles is not in the selected Discord server' }
+  return { value: [...new Set(roleIds)].join(',') }
 }
 
 // Returns an error message if the platform-specific required fields are missing/invalid, else null.
@@ -164,16 +187,20 @@ export async function createChannel(access: UserAccess, countryId: number, body:
   if (platform === 'email' && !resolvedEmailCred.id) return err('An email credential is required for email')
 
   let discordBot: { guildId: string; channelId: string; forum: boolean } | null = null
+  let discordRoles: string | null = null
   if (platform === 'discord_bot') {
     const resolved = await resolveDiscordBotChannel(countryId, body.discord_guild_id, body.discord_channel_id)
     if ('error' in resolved) return err(resolved.error)
     discordBot = resolved
+    const roles = await resolveDiscordRoles(resolved.guildId, body.discord_role_ids)
+    if ('error' in roles) return err(roles.error)
+    discordRoles = roles.value
   }
 
   const result = await dbRun(
     `INSERT INTO notification_channels
-       (country_id, region_id, label, platform, event_type, webhook_url, bot_token, chat_id, custom_prefix, email_to, discord_forum, spreadsheet_id, sheet_name, google_credential_id, email_credential_id, discord_guild_id, discord_channel_id, discord_threaded)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (country_id, region_id, label, platform, event_type, webhook_url, bot_token, chat_id, custom_prefix, email_to, discord_forum, spreadsheet_id, sheet_name, google_credential_id, email_credential_id, discord_guild_id, discord_channel_id, discord_threaded, discord_role_ids)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       countryId,
       resolvedRegion.id,
@@ -193,6 +220,7 @@ export async function createChannel(access: UserAccess, countryId: number, body:
       discordBot?.guildId ?? null,
       discordBot?.channelId ?? null,
       discordBot && body.discord_threaded ? 1 : 0,
+      discordRoles,
     ],
   )
   const row = await dbFirst<NotificationChannel>('SELECT * FROM notification_channels WHERE id = ?', [
@@ -251,6 +279,7 @@ export async function updateChannel(access: UserAccess, id: number, body: Channe
   let discord_guild_id: string | null = null
   let discord_channel_id: string | null = null
   let discord_threaded = 0
+  let discord_role_ids: string | null = null
   if (platform === 'discord_bot') {
     discord_threaded =
       body.discord_threaded !== undefined ? (body.discord_threaded ? 1 : 0) : existing.discord_threaded
@@ -269,13 +298,22 @@ export async function updateChannel(access: UserAccess, id: number, body: Channe
     } else {
       discord_forum = existing.discord_forum
     }
+    // Same as the target: only re-checked against Discord when the roles or the server change.
+    const previousRoles = existing.platform === 'discord_bot' ? existing.discord_role_ids : null
+    const roleIds = body.discord_role_ids !== undefined ? body.discord_role_ids : previousRoles?.split(',')
+    discord_role_ids = previousRoles
+    if (targetChanged || (roleIds ?? []).join(',') !== (previousRoles ?? '')) {
+      const roles = await resolveDiscordRoles(discord_guild_id!, roleIds)
+      if ('error' in roles) return err(roles.error)
+      discord_role_ids = roles.value
+    }
   }
 
   await dbRun(
     `UPDATE notification_channels
      SET label=?, platform=?, event_type=?, region_id=?, webhook_url=?, bot_token=?, chat_id=?, custom_prefix=?, email_to=?,
          discord_forum=?, spreadsheet_id=?, sheet_name=?, google_credential_id=?, email_credential_id=?,
-         discord_guild_id=?, discord_channel_id=?, discord_threaded=?
+         discord_guild_id=?, discord_channel_id=?, discord_threaded=?, discord_role_ids=?
      WHERE id=?`,
     [
       label,
@@ -295,6 +333,7 @@ export async function updateChannel(access: UserAccess, id: number, body: Channe
       discord_guild_id,
       discord_channel_id,
       discord_threaded,
+      discord_role_ids,
       id,
     ],
   )

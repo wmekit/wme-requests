@@ -51,6 +51,7 @@ export interface NotificationChannel {
   discord_guild_id: string | null
   discord_channel_id: string | null
   discord_threaded: number
+  discord_role_ids: string | null
 }
 
 export interface RequestRow {
@@ -246,8 +247,11 @@ async function sendDiscord(
 // thread buttons (src/lib/discord-interactions.ts).
 async function sendDiscordBot(channel: NotificationChannel, msg: ReturnType<typeof buildMessage>, prefix: string | null) {
   if (!channel.discord_channel_id) throw new Error('No Discord channel configured for this channel')
+  // Role pings go at the start of the message's content, ahead of the prefix.
+  const roleMentions = (channel.discord_role_ids?.split(',') ?? []).map((r) => `<@&${r}>`).join(' ')
+  const content = [roleMentions, prefix].filter(Boolean).join('\n') || null
   const message = {
-    ...buildDiscordPayload(msg, prefix),
+    ...buildDiscordPayload(msg, content),
     allowed_mentions: { parse: ['users', 'roles', 'everyone'] },
     ...(channel.discord_threaded && msg.requestId != null && interactionsConfigured()
       ? { components: requestButtons(msg.requestId) }

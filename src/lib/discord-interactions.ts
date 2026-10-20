@@ -6,6 +6,7 @@ import {
   closeThreadButton,
   discordApi,
   verifyInteraction,
+  DiscordApiError,
   CLOSE_THREAD_BUTTON,
   REQUEST_STATUS_BUTTON,
 } from './discord-bot'
@@ -21,6 +22,7 @@ const THREAD_CHANNEL_TYPES = [10, 11, 12]
 const MANAGE_THREADS = 1n << 34n
 const ADMINISTRATOR = 1n << 3n
 const EPHEMERAL = 64
+const MISSING_PERMISSIONS = 50013
 
 const STATUS_LABELS: Record<string, string> = { completed: 'Completed', rejected: 'Rejected' }
 
@@ -98,9 +100,11 @@ async function setRequestStatus(interaction: Interaction, status: string, reques
   })
 }
 
-// Archives the thread the button belongs to — the one the message is in (a forum post, or a
+// Archives and locks the thread the button belongs to — the one the message is in (a forum post, or a
 // reply in a text-channel thread), or the one started from it — and ends the submitter's thread
 // chain so their next request starts a new one. Deferred, since it's a few Discord calls.
+// Archiving comes last: anything posted in the thread afterwards (even the reply to this click)
+// would unarchive it again. Locking stops other members' replies reopening it.
 async function closeThread(interaction: Interaction) {
   const message = interaction.message!
   const inThread = !!interaction.channel && THREAD_CHANNEL_TYPES.includes(interaction.channel.type)
@@ -135,10 +139,17 @@ async function closeThread(interaction: Interaction) {
           method: 'POST',
           body: JSON.stringify({ content: `🔒 Thread closed by <@${userId}>.`, allowed_mentions: { parse: [] } }),
         })
-        await discordApi(`/channels/${thread}`, { method: 'PATCH', body: JSON.stringify({ archived: true }) })
         await followUp('Thread closed.')
+        await discordApi(`/channels/${thread}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ archived: true, locked: true }),
+        })
       } catch (e) {
-        await followUp(`Couldn’t close the thread — ${(e as Error).message}`).catch(() => {})
+        const reason =
+          e instanceof DiscordApiError && e.code === MISSING_PERMISSIONS
+            ? 'the bot needs the **Manage Threads** permission in this channel.'
+            : (e as Error).message
+        await followUp(`Couldn’t close the thread — ${reason}`).catch(() => {})
       }
     })(),
   )
