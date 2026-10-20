@@ -86,6 +86,7 @@ This applies everything under [`migrations/`](migrations/):
 | `0025_central_auth.sql` | `user_access` (who may use this app, `is_global`, `feed_token`), copied from `user` — sign-in moved to the WMEKit account service, and Better Auth's tables (0002, 0022–0024) are no longer used |
 | `0026_superadmin.sql` | `user_access.is_superadmin` — the only level allowed to edit (name, code) or delete countries; set in the database only (see step 12) |
 | `0028_discord_bot_channel.sql` | `discord_bot` notification platform + `notification_channels.discord_guild_id`/`discord_channel_id`, and `discord_guilds` — the Discord servers each country has added the bot to (see step 8) |
+| `0029_discord_bot_threaded.sql` | `notification_channels.discord_threaded` — the Discord (Bot) "thread requests from the same submitter" option |
 
 You'll re-run `db:migrate:remote` any time you pull a future update that adds a new migration file — `wrangler d1 migrations apply` only applies migrations that haven't run yet, so it's always safe to re-run.
 
@@ -158,6 +159,14 @@ of this. ("Sign in with Discord" is separate and lives on the account service.)
    For local dev, put all three in `.dev.vars` (`DISCORD_APPLICATION_ID`, `DISCORD_BOT_TOKEN`,
    `DISCORD_CLIENT_SECRET`) — `.dev.vars` overrides the `wrangler.jsonc` var.
 4. Run `npm run cf-typegen`.
+5. (Optional, for the buttons on threaded channels' messages.) Set the application's **Public
+   Key** (General Information page) as `vars.DISCORD_PUBLIC_KEY` in `wrangler.jsonc` and deploy,
+   then set **Interactions Endpoint URL** on that same page to
+   `https://<your APP_URL>/api/discord/interactions` — Discord checks the URL when you save, so
+   deploy first. Channels with "Thread requests from the same submitter" ticked then get
+   **Complete**, **Reject** and **Close thread** buttons on each request; anyone with Manage
+   Threads in the channel can use them. Complete/Reject set the request's status here; Close
+   thread archives the thread and makes that submitter's next request start a new one.
 
 How servers get linked: **Add bot** in the channel form opens Discord's
 "Add to server" page (an OAuth2 code-grant install). Discord redirects back to
@@ -165,9 +174,11 @@ How servers get linked: **Add bot** in the channel form opens Discord's
 encrypted with `CHANNEL_CREDENTIALS_KEY`, so set that from step 9 too) and records the server
 Discord reports in `discord_guilds` for that country. Channels can only be picked from servers
 linked to their own country, since one bot is shared by every country. The bot asks for View
-Channel, Send Messages, Embed Links, Send Messages in Threads (for forum posts) and Mention
-Everyone (so `@here`/role mentions in a channel's prefix ping); the admin adding it can untick
-any of these.
+Channel, Send Messages, Embed Links, Send Messages in Threads (for forum posts), Create Public
+Threads (for threaded channels) and Mention Everyone (so `@here`/role mentions in a channel's
+prefix ping); the admin adding it can untick any of these. Servers added before Create Public
+Threads was requested need it granted to the bot's role (or the bot re-added) for threading in
+text channels — until then those notifications post as separate messages.
 
 ## 9 — Configure the Credentials Manager (optional)
 

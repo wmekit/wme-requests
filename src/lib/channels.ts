@@ -41,6 +41,8 @@ interface ChannelBody {
   // discord_bot only — see resolveDiscordBotChannel.
   discord_guild_id?: string | null
   discord_channel_id?: string | null
+  // discord_bot only — thread same-submitter requests, see sendDiscordBot.
+  discord_threaded?: boolean
 }
 
 // Resolves+validates an optional region_id against the channel's country. Returns the
@@ -170,8 +172,8 @@ export async function createChannel(access: UserAccess, countryId: number, body:
 
   const result = await dbRun(
     `INSERT INTO notification_channels
-       (country_id, region_id, label, platform, event_type, webhook_url, bot_token, chat_id, custom_prefix, email_to, discord_forum, spreadsheet_id, sheet_name, google_credential_id, email_credential_id, discord_guild_id, discord_channel_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (country_id, region_id, label, platform, event_type, webhook_url, bot_token, chat_id, custom_prefix, email_to, discord_forum, spreadsheet_id, sheet_name, google_credential_id, email_credential_id, discord_guild_id, discord_channel_id, discord_threaded)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       countryId,
       resolvedRegion.id,
@@ -190,6 +192,7 @@ export async function createChannel(access: UserAccess, countryId: number, body:
       resolvedEmailCred.id,
       discordBot?.guildId ?? null,
       discordBot?.channelId ?? null,
+      discordBot && body.discord_threaded ? 1 : 0,
     ],
   )
   const row = await dbFirst<NotificationChannel>('SELECT * FROM notification_channels WHERE id = ?', [
@@ -247,7 +250,10 @@ export async function updateChannel(access: UserAccess, id: number, body: Channe
 
   let discord_guild_id: string | null = null
   let discord_channel_id: string | null = null
+  let discord_threaded = 0
   if (platform === 'discord_bot') {
+    discord_threaded =
+      body.discord_threaded !== undefined ? (body.discord_threaded ? 1 : 0) : existing.discord_threaded
     discord_guild_id = body.discord_guild_id !== undefined ? body.discord_guild_id : existing.discord_guild_id
     discord_channel_id = body.discord_channel_id !== undefined ? body.discord_channel_id : existing.discord_channel_id
     // Re-checked only when the target changes, so editing e.g. the label doesn't fail just
@@ -269,7 +275,7 @@ export async function updateChannel(access: UserAccess, id: number, body: Channe
     `UPDATE notification_channels
      SET label=?, platform=?, event_type=?, region_id=?, webhook_url=?, bot_token=?, chat_id=?, custom_prefix=?, email_to=?,
          discord_forum=?, spreadsheet_id=?, sheet_name=?, google_credential_id=?, email_credential_id=?,
-         discord_guild_id=?, discord_channel_id=?
+         discord_guild_id=?, discord_channel_id=?, discord_threaded=?
      WHERE id=?`,
     [
       label,
@@ -288,6 +294,7 @@ export async function updateChannel(access: UserAccess, id: number, body: Channe
       email_credential_id,
       discord_guild_id,
       discord_channel_id,
+      discord_threaded,
       id,
     ],
   )

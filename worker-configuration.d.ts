@@ -15,6 +15,7 @@ interface __BaseEnv_Env {
 	DISCORD_CLIENT_SECRET: string;
 	DISCORD_BOT_TOKEN: string;
 	DISCORD_APPLICATION_ID: string;
+	DISCORD_PUBLIC_KEY: "";
 	TURNSTILE_SECRET_KEY: string;
 	APP_URL: string;
 	AUTH_URL: string;
@@ -31,7 +32,7 @@ type StringifyValues<EnvType extends Record<string, unknown>> = {
 	[Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;
 };
 declare namespace NodeJS {
-	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "ALLOWED_ORIGINS" | "REQUIRE_PAGE_ORIGIN_HEADER" | "WEB_PUSH_VAPID_PUBLIC_KEY" | "BETTER_AUTH_SECRET" | "BETTER_AUTH_URL" | "CHANNEL_CREDENTIALS_KEY" | "WEB_PUSH_VAPID_PRIVATE_JWK" | "WEB_PUSH_CONTACT" | "DISCORD_CLIENT_SECRET" | "DISCORD_BOT_TOKEN" | "DISCORD_APPLICATION_ID" | "TURNSTILE_SECRET_KEY" | "APP_URL" | "AUTH_URL">> {}
+	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "ALLOWED_ORIGINS" | "REQUIRE_PAGE_ORIGIN_HEADER" | "WEB_PUSH_VAPID_PUBLIC_KEY" | "BETTER_AUTH_SECRET" | "BETTER_AUTH_URL" | "CHANNEL_CREDENTIALS_KEY" | "WEB_PUSH_VAPID_PRIVATE_JWK" | "WEB_PUSH_CONTACT" | "DISCORD_CLIENT_SECRET" | "DISCORD_BOT_TOKEN" | "DISCORD_APPLICATION_ID" | "DISCORD_PUBLIC_KEY" | "TURNSTILE_SECRET_KEY" | "APP_URL" | "AUTH_URL">> {}
 }
 
 // Begin runtime types

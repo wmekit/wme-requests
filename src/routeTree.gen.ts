@@ -35,6 +35,7 @@ import { Route as ApiCountriesIdRouteImport } from './routes/api/countries/$id'
 import { Route as ApiCredentialsIdRouteImport } from './routes/api/credentials/$id'
 import { Route as ApiDiscordCallbackRouteImport } from './routes/api/discord/callback'
 import { Route as ApiDiscordInstallRouteImport } from './routes/api/discord/install'
+import { Route as ApiDiscordInteractionsRouteImport } from './routes/api/discord/interactions'
 import { Route as ApiPushSubscribeRouteImport } from './routes/api/push/subscribe'
 import { Route as ApiPushSubscriptionsRouteImport } from './routes/api/push/subscriptions'
 import { Route as ApiPushVapidPublicKeyRouteImport } from './routes/api/push/vapid-public-key'
@@ -182,6 +183,11 @@ const ApiDiscordInstallRoute = ApiDiscordInstallRouteImport.update({
   path: '/api/discord/install',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiDiscordInteractionsRoute = ApiDiscordInteractionsRouteImport.update({
+  id: '/api/discord/interactions',
+  path: '/api/discord/interactions',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPushSubscribeRoute = ApiPushSubscribeRouteImport.update({
   id: '/api/push/subscribe',
   path: '/api/push/subscribe',
@@ -297,6 +303,7 @@ export interface FileRoutesByFullPath {
   '/api/credentials/$id': typeof ApiCredentialsIdRoute
   '/api/discord/callback': typeof ApiDiscordCallbackRoute
   '/api/discord/install': typeof ApiDiscordInstallRoute
+  '/api/discord/interactions': typeof ApiDiscordInteractionsRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/push/subscriptions': typeof ApiPushSubscriptionsRouteWithChildren
   '/api/push/vapid-public-key': typeof ApiPushVapidPublicKeyRoute
@@ -341,6 +348,7 @@ export interface FileRoutesByTo {
   '/api/credentials/$id': typeof ApiCredentialsIdRoute
   '/api/discord/callback': typeof ApiDiscordCallbackRoute
   '/api/discord/install': typeof ApiDiscordInstallRoute
+  '/api/discord/interactions': typeof ApiDiscordInteractionsRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/push/subscriptions': typeof ApiPushSubscriptionsRouteWithChildren
   '/api/push/vapid-public-key': typeof ApiPushVapidPublicKeyRoute
@@ -387,6 +395,7 @@ export interface FileRoutesById {
   '/api/credentials/$id': typeof ApiCredentialsIdRoute
   '/api/discord/callback': typeof ApiDiscordCallbackRoute
   '/api/discord/install': typeof ApiDiscordInstallRoute
+  '/api/discord/interactions': typeof ApiDiscordInteractionsRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/push/subscriptions': typeof ApiPushSubscriptionsRouteWithChildren
   '/api/push/vapid-public-key': typeof ApiPushVapidPublicKeyRoute
@@ -433,6 +442,7 @@ export interface FileRouteTypes {
     | '/api/credentials/$id'
     | '/api/discord/callback'
     | '/api/discord/install'
+    | '/api/discord/interactions'
     | '/api/push/subscribe'
     | '/api/push/subscriptions'
     | '/api/push/vapid-public-key'
@@ -477,6 +487,7 @@ export interface FileRouteTypes {
     | '/api/credentials/$id'
     | '/api/discord/callback'
     | '/api/discord/install'
+    | '/api/discord/interactions'
     | '/api/push/subscribe'
     | '/api/push/subscriptions'
     | '/api/push/vapid-public-key'
@@ -522,6 +533,7 @@ export interface FileRouteTypes {
     | '/api/credentials/$id'
     | '/api/discord/callback'
     | '/api/discord/install'
+    | '/api/discord/interactions'
     | '/api/push/subscribe'
     | '/api/push/subscriptions'
     | '/api/push/vapid-public-key'
@@ -562,6 +574,7 @@ export interface RootRouteChildren {
   ApiChannelsIdRoute: typeof ApiChannelsIdRouteWithChildren
   ApiDiscordCallbackRoute: typeof ApiDiscordCallbackRoute
   ApiDiscordInstallRoute: typeof ApiDiscordInstallRoute
+  ApiDiscordInteractionsRoute: typeof ApiDiscordInteractionsRoute
   ApiPushSubscribeRoute: typeof ApiPushSubscribeRoute
   ApiPushSubscriptionsRoute: typeof ApiPushSubscriptionsRouteWithChildren
   ApiPushVapidPublicKeyRoute: typeof ApiPushVapidPublicKeyRoute
@@ -751,6 +764,13 @@ declare module '@tanstack/react-router' {
       path: '/api/discord/install'
       fullPath: '/api/discord/install'
       preLoaderRoute: typeof ApiDiscordInstallRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/discord/interactions': {
+      id: '/api/discord/interactions'
+      path: '/api/discord/interactions'
+      fullPath: '/api/discord/interactions'
+      preLoaderRoute: typeof ApiDiscordInteractionsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/push/subscribe': {
@@ -1057,6 +1077,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiChannelsIdRoute: ApiChannelsIdRouteWithChildren,
   ApiDiscordCallbackRoute: ApiDiscordCallbackRoute,
   ApiDiscordInstallRoute: ApiDiscordInstallRoute,
+  ApiDiscordInteractionsRoute: ApiDiscordInteractionsRoute,
   ApiPushSubscribeRoute: ApiPushSubscribeRoute,
   ApiPushSubscriptionsRoute: ApiPushSubscriptionsRouteWithChildren,
   ApiPushVapidPublicKeyRoute: ApiPushVapidPublicKeyRoute,

@@ -63,6 +63,7 @@ const EMPTY_VALUES: ChannelFormValues = {
   email_credential_id: null,
   discord_guild_id: null,
   discord_channel_id: null,
+  discord_threaded: false,
 }
 
 // Select data for a Discord server's channels: uncategorised ones first, then one group per
@@ -146,6 +147,7 @@ export default function ChannelFormModal({ opened, onClose, countryId, channel }
               email_credential_id: channel.email_credential_id,
               discord_guild_id: channel.discord_guild_id,
               discord_channel_id: channel.discord_channel_id,
+              discord_threaded: !!channel.discord_threaded,
             }
           : EMPTY_VALUES,
       )
@@ -192,6 +194,7 @@ export default function ChannelFormModal({ opened, onClose, countryId, channel }
       email_credential_id: values.platform === 'email' ? values.email_credential_id : null,
       discord_guild_id: values.platform === 'discord_bot' ? values.discord_guild_id : null,
       discord_channel_id: values.platform === 'discord_bot' ? values.discord_channel_id : null,
+      discord_threaded: values.platform === 'discord_bot' ? values.discord_threaded : false,
     }
     try {
       if (isEdit && channel) {
@@ -351,6 +354,12 @@ export default function ChannelFormModal({ opened, onClose, countryId, channel }
                   }
                   rightSection={discordChannelsQuery.isFetching ? <Loader size="xs" /> : undefined}
                   disabled={saving || !form.values.discord_guild_id}
+                />
+                <Checkbox
+                  label="Thread requests from the same submitter"
+                  description="Consecutive requests from the same submitter on the same day reply in one thread instead of posting separately — in a forum, as replies to the first request's post. Each request gets Complete, Reject and Close thread buttons for anyone with Manage Threads."
+                  disabled={saving}
+                  {...form.getInputProps('discord_threaded', { type: 'checkbox' })}
                 />
               </>
             )}

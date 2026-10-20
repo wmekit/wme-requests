@@ -66,6 +66,12 @@ const SECTIONS: HelpSection[] = [
         Pick the server and channel. The bot needs to be able to see the channel — check its permissions if the channel
         is private. Forum channels get a new post per notification.
       </>,
+      <>
+        Optionally tick <strong>Thread requests from the same submitter</strong> — consecutive requests from one
+        submitter on the same day then go into a single thread (or forum post) instead of separate messages. Each
+        request gets <strong>Complete</strong>, <strong>Reject</strong> and <strong>Close thread</strong> buttons,
+        usable by anyone with the Manage Threads permission in that channel.
+      </>,
     ],
   },
   {

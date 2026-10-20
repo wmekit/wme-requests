@@ -212,6 +212,7 @@ export interface ChannelFormValues {
   // discord_bot only — a server from useDiscordGuilds and a channel from useDiscordGuildChannels.
   discord_guild_id: string | null
   discord_channel_id: string | null
+  discord_threaded: boolean
 }
 
 export function useCreateChannel() {

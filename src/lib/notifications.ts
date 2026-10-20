@@ -4,7 +4,13 @@ import { screenshotUrl } from './screenshots'
 import { resolveGoogleCredential, resolveEmailCredential } from './credentials'
 import { sendEmail as dispatchEmail } from './email/send-email'
 import { sendPush } from './push'
-import { discordApi } from './discord-bot'
+import {
+  discordApi,
+  DiscordApiError,
+  UNKNOWN_CHANNEL,
+  interactionsConfigured,
+  requestButtons,
+} from './discord-bot'
 import { audiencePushSubscriptions, deleteSubscriptionById, type PushSubscriptionRow } from './subscriptions'
 
 // Same as LOCK_GATED_TYPES in ./requests — downlock/uplock and PUR requests carry a lock
@@ -44,6 +50,7 @@ export interface NotificationChannel {
   last_thread_day: string | null
   discord_guild_id: string | null
   discord_channel_id: string | null
+  discord_threaded: number
 }
 
 export interface RequestRow {
@@ -83,6 +90,7 @@ function buildMessage(request: RequestRow, countryName: string, regionName: stri
   const place = regionName ? `${regionName}, ${countryName}` : countryName
   const title = `${meta.label} — ${place}`
   return {
+    requestId: request.id as number | null,
     title,
     color: meta.color,
     permalink: request.permalink,
@@ -228,21 +236,70 @@ async function sendDiscord(
 // throw with Discord's reason (e.g. the bot was removed from the server), which the Test button
 // shows. allowed_mentions is explicit so mentions in the prefix still ping; forum channels get
 // a new post per notification, same as the webhook sender.
-async function sendDiscordBot(
-  channelId: string,
-  msg: ReturnType<typeof buildMessage>,
-  prefix: string | null,
-  isForum: boolean,
-) {
-  const message = { ...buildDiscordPayload(msg, prefix), allowed_mentions: { parse: ['users', 'roles', 'everyone'] } }
-  const id = encodeURIComponent(channelId)
-  if (isForum) {
-    await discordApi(`/channels/${id}/threads`, {
-      method: 'POST',
-      body: JSON.stringify({ name: (prefix || msg.title).slice(0, 100), message }),
-    })
-  } else {
-    await discordApi(`/channels/${id}/messages`, { method: 'POST', body: JSON.stringify(message) })
+//
+// With discord_threaded set, consecutive requests from the same submitter (same UTC calendar day)
+// go into one thread instead, like sendSlackThreaded: in a forum, as replies to the first
+// request's post; in a text/announcement channel, in a thread started from the first request's
+// message (created on the second request, so single requests don't leave empty threads behind).
+// A thread started from a message shares its id, so last_thread_ts holding that message id is
+// enough either way. Threaded channels' request messages also get Complete / Reject / Close
+// thread buttons (src/lib/discord-interactions.ts).
+async function sendDiscordBot(channel: NotificationChannel, msg: ReturnType<typeof buildMessage>, prefix: string | null) {
+  if (!channel.discord_channel_id) throw new Error('No Discord channel configured for this channel')
+  const message = {
+    ...buildDiscordPayload(msg, prefix),
+    allowed_mentions: { parse: ['users', 'roles', 'everyone'] },
+    ...(channel.discord_threaded && msg.requestId != null && interactionsConfigured()
+      ? { components: requestButtons(msg.requestId) }
+      : {}),
+  }
+  const id = encodeURIComponent(channel.discord_channel_id)
+  const isForum = !!channel.discord_forum
+
+  const today = new Date().toISOString().slice(0, 10)
+  const threadId =
+    channel.discord_threaded &&
+    msg.submittedBy &&
+    msg.submittedBy === channel.last_thread_submitted_by &&
+    today === channel.last_thread_day
+      ? channel.last_thread_ts
+      : null
+
+  if (threadId) {
+    const thread = encodeURIComponent(threadId)
+    const reply = () => discordApi(`/channels/${thread}/messages`, { method: 'POST', body: JSON.stringify(message) })
+    try {
+      try {
+        await reply()
+      } catch (e) {
+        if (isForum || !(e instanceof DiscordApiError) || e.code !== UNKNOWN_CHANNEL) throw e
+        // No thread on the first request's message yet — start one, then reply in it.
+        await discordApi(`/channels/${id}/messages/${thread}/threads`, {
+          method: 'POST',
+          body: JSON.stringify({ name: `Requests from ${msg.submittedBy} — ${today}`.slice(0, 100) }),
+        })
+        await reply()
+      }
+      return
+    } catch (e) {
+      // The thread (or its starter message) was deleted, it's locked, or the bot can't create
+      // threads — fall back to a fresh top-level post, which starts a new chain.
+      console.warn('Discord thread reply failed, posting a new message instead', e)
+    }
+  }
+
+  const posted = isForum
+    ? await discordApi<{ id: string }>(`/channels/${id}/threads`, {
+        method: 'POST',
+        body: JSON.stringify({ name: (prefix || msg.title).slice(0, 100), message }),
+      })
+    : await discordApi<{ id: string }>(`/channels/${id}/messages`, { method: 'POST', body: JSON.stringify(message) })
+
+  if (channel.discord_threaded) {
+    await dbRun(
+      `UPDATE notification_channels SET last_thread_submitted_by = ?, last_thread_ts = ?, last_thread_day = ? WHERE id = ?`,
+      [msg.submittedBy || null, posted.id, today, channel.id],
+    )
   }
 }
 
@@ -468,10 +525,7 @@ async function dispatchChannel(channel: NotificationChannel, msg: ReturnType<typ
     if (channel.platform === 'slack_threaded') await sendSlackThreaded(channel, msg, prefix)
     if (channel.platform === 'discord' && channel.webhook_url)
       await sendDiscord(channel.webhook_url, msg, prefix, !!channel.discord_forum)
-    if (channel.platform === 'discord_bot') {
-      if (!channel.discord_channel_id) throw new Error('No Discord channel configured for this channel')
-      await sendDiscordBot(channel.discord_channel_id, msg, prefix, !!channel.discord_forum)
-    }
+    if (channel.platform === 'discord_bot') await sendDiscordBot(channel, msg, prefix)
     if (channel.platform === 'telegram' && channel.bot_token && channel.chat_id)
       await sendTelegram(channel.bot_token, channel.chat_id, msg, prefix)
     if (channel.platform === 'email' && channel.email_to)
@@ -568,6 +622,7 @@ export async function sendTestMessage(
   return dispatchChannel(
     channel,
     {
+      requestId: null,
       title: `Test Notification — ${channel.label}`,
       color: 0x2ecc71,
       permalink: 'https://www.waze.com/editor',

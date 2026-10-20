@@ -49,7 +49,11 @@
 		// The Discord application (= OAuth2 client ID) of this app's own bot, used by the
 		// "Discord (Bot)" channel platform. Its DISCORD_BOT_TOKEN and DISCORD_CLIENT_SECRET are
 		// secrets — see DEPLOYMENT.md. Empty disables adding the bot to servers.
-		"DISCORD_APPLICATION_ID": "1555362691571253248"
+		"DISCORD_APPLICATION_ID": "1555362691571253248",
+		// The same application's Public Key (Developer Portal → General Information), used to
+		// verify button clicks sent to /api/discord/interactions. Empty leaves the buttons off
+		// threaded Discord (Bot) channels' messages.
+		"DISCORD_PUBLIC_KEY": ""
 	},
 	"d1_databases": [
 		{

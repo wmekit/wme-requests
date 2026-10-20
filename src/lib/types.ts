@@ -55,6 +55,7 @@ export interface Channel {
   // discord_bot only — a server linked to the country (see DiscordGuild) and a channel in it.
   discord_guild_id: string | null
   discord_channel_id: string | null
+  discord_threaded: number
 }
 
 export interface Credential {
