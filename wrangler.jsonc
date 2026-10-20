@@ -53,7 +53,7 @@
 		// The same application's Public Key (Developer Portal → General Information), used to
 		// verify button clicks sent to /api/discord/interactions. Empty leaves the buttons off
 		// threaded Discord (Bot) channels' messages.
-		"DISCORD_PUBLIC_KEY": ""
+		"DISCORD_PUBLIC_KEY": "6e97e2c7df2aa0c2b4835a48f0e6c9a3b163941838da938d96b1cfc9e610a43a"
 	},
 	"d1_databases": [
 		{
