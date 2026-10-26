@@ -68,6 +68,8 @@ const SECTIONS: HelpSection[] = [
       </>,
       <>
         Optionally pick <strong>Roles to ping</strong> — they're mentioned at the start of every notification.
+        You can also pick one of the server's custom emojis for each <strong>Lock level</strong> (L1–L7); it's shown
+        next to the role pings and the lock level on lock-level requests.
       </>,
       <>
         Optionally tick <strong>Thread requests from the same submitter</strong> — consecutive requests from one

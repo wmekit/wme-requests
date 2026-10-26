@@ -4,7 +4,14 @@ import { sendTestMessage, type NotificationChannel } from './notifications'
 import { canAccessCountry, type UserAccess } from './access'
 import { credentialExists } from './credentials'
 import { isGuildLinked } from './discord-guilds'
-import { getChannel, listGuildRoles, FORUM_CHANNEL_TYPE, POSTABLE_CHANNEL_TYPES } from './discord-bot'
+import {
+  getChannel,
+  listGuildEmojis,
+  listGuildRoles,
+  FORUM_CHANNEL_TYPE,
+  POSTABLE_CHANNEL_TYPES,
+  type GuildEmoji,
+} from './discord-bot'
 
 export async function getChannels(access: UserAccess, countryId: number) {
   const country = await dbFirst('SELECT id FROM countries WHERE id = ?', [countryId])
@@ -45,6 +52,8 @@ interface ChannelBody {
   discord_threaded?: boolean
   // discord_bot only — roles in the channel's server to ping in every notification.
   discord_role_ids?: string[] | null
+  // discord_bot only — a custom emoji (by id) from the channel's server per lock level, "1"–"7".
+  discord_lock_emojis?: Record<string, string | null> | null
 }
 
 // Resolves+validates an optional region_id against the channel's country. Returns the
@@ -115,6 +124,59 @@ async function resolveDiscordRoles(
   const valid = new Set(roles.map((r) => r.id))
   if (roleIds.some((id) => !valid.has(id))) return { error: 'One of those roles is not in the selected Discord server' }
   return { value: [...new Set(roleIds)].join(',') }
+}
+
+// For discord_bot: each lock level ("1"–"7") may map to a custom emoji from the channel's server.
+// Stored as JSON keyed by level with the emoji's name and animated flag too, so sending can write
+// `<:name:id>` without asking Discord again. Null for none.
+async function resolveDiscordLockEmojis(
+  guildId: string,
+  map: Record<string, string | null> | null | undefined,
+): Promise<{ value: string | null } | { error: string }> {
+  if (map == null) return { value: null }
+  if (typeof map !== 'object' || Array.isArray(map)) {
+    return { error: 'discord_lock_emojis must map lock levels to emoji IDs' }
+  }
+  const entries = Object.entries(map).filter(([, id]) => id != null && id !== '')
+  if (!entries.length) return { value: null }
+  if (!entries.every(([level, id]) => /^[1-7]$/.test(level) && typeof id === 'string' && /^\d+$/.test(id))) {
+    return { error: 'discord_lock_emojis must map lock levels 1–7 to emoji IDs' }
+  }
+  let emojis
+  try {
+    emojis = await listGuildEmojis(guildId)
+  } catch (e) {
+    return { error: `Can't load that Discord server's emojis — ${(e as Error).message}` }
+  }
+  const byId = new Map(emojis.map((e) => [e.id, e]))
+  const value: Record<string, GuildEmoji> = {}
+  for (const [level, id] of entries.sort(([a], [b]) => a.localeCompare(b))) {
+    const emoji = byId.get(id as string)
+    if (!emoji) return { error: 'One of those emojis is not in the selected Discord server' }
+    value[level] = emoji
+  }
+  return { value: JSON.stringify(value) }
+}
+
+// A stored discord_lock_emojis value as level → emoji id, for comparing against a request body.
+function lockEmojiIds(stored: string | null): Record<string, string> {
+  if (!stored) return {}
+  try {
+    const parsed = JSON.parse(stored) as Record<string, GuildEmoji>
+    return Object.fromEntries(Object.entries(parsed).map(([level, e]) => [level, e.id]))
+  } catch {
+    return {}
+  }
+}
+
+function sameLockEmojis(a: Record<string, string | null> | null | undefined, b: Record<string, string | null>) {
+  const key = (m: Record<string, string | null> | null | undefined) =>
+    Object.entries(m ?? {})
+      .filter(([, id]) => id)
+      .map(([level, id]) => `${level}:${id}`)
+      .sort()
+      .join(',')
+  return key(a) === key(b)
 }
 
 // Returns an error message if the platform-specific required fields are missing/invalid, else null.
@@ -188,6 +250,7 @@ export async function createChannel(access: UserAccess, countryId: number, body:
 
   let discordBot: { guildId: string; channelId: string; forum: boolean } | null = null
   let discordRoles: string | null = null
+  let discordLockEmojis: string | null = null
   if (platform === 'discord_bot') {
     const resolved = await resolveDiscordBotChannel(countryId, body.discord_guild_id, body.discord_channel_id)
     if ('error' in resolved) return err(resolved.error)
@@ -195,12 +258,15 @@ export async function createChannel(access: UserAccess, countryId: number, body:
     const roles = await resolveDiscordRoles(resolved.guildId, body.discord_role_ids)
     if ('error' in roles) return err(roles.error)
     discordRoles = roles.value
+    const emojis = await resolveDiscordLockEmojis(resolved.guildId, body.discord_lock_emojis)
+    if ('error' in emojis) return err(emojis.error)
+    discordLockEmojis = emojis.value
   }
 
   const result = await dbRun(
     `INSERT INTO notification_channels
-       (country_id, region_id, label, platform, event_type, webhook_url, bot_token, chat_id, custom_prefix, email_to, discord_forum, spreadsheet_id, sheet_name, google_credential_id, email_credential_id, discord_guild_id, discord_channel_id, discord_threaded, discord_role_ids)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (country_id, region_id, label, platform, event_type, webhook_url, bot_token, chat_id, custom_prefix, email_to, discord_forum, spreadsheet_id, sheet_name, google_credential_id, email_credential_id, discord_guild_id, discord_channel_id, discord_threaded, discord_role_ids, discord_lock_emojis)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       countryId,
       resolvedRegion.id,
@@ -221,6 +287,7 @@ export async function createChannel(access: UserAccess, countryId: number, body:
       discordBot?.channelId ?? null,
       discordBot && body.discord_threaded ? 1 : 0,
       discordRoles,
+      discordLockEmojis,
     ],
   )
   const row = await dbFirst<NotificationChannel>('SELECT * FROM notification_channels WHERE id = ?', [
@@ -280,6 +347,7 @@ export async function updateChannel(access: UserAccess, id: number, body: Channe
   let discord_channel_id: string | null = null
   let discord_threaded = 0
   let discord_role_ids: string | null = null
+  let discord_lock_emojis: string | null = null
   if (platform === 'discord_bot') {
     discord_threaded =
       body.discord_threaded !== undefined ? (body.discord_threaded ? 1 : 0) : existing.discord_threaded
@@ -307,13 +375,24 @@ export async function updateChannel(access: UserAccess, id: number, body: Channe
       if ('error' in roles) return err(roles.error)
       discord_role_ids = roles.value
     }
+    const previousEmojis = existing.platform === 'discord_bot' ? existing.discord_lock_emojis : null
+    discord_lock_emojis = previousEmojis
+    if (
+      targetChanged ||
+      (body.discord_lock_emojis !== undefined && !sameLockEmojis(body.discord_lock_emojis, lockEmojiIds(previousEmojis)))
+    ) {
+      const emojiMap = body.discord_lock_emojis !== undefined ? body.discord_lock_emojis : lockEmojiIds(previousEmojis)
+      const emojis = await resolveDiscordLockEmojis(discord_guild_id!, emojiMap)
+      if ('error' in emojis) return err(emojis.error)
+      discord_lock_emojis = emojis.value
+    }
   }
 
   await dbRun(
     `UPDATE notification_channels
      SET label=?, platform=?, event_type=?, region_id=?, webhook_url=?, bot_token=?, chat_id=?, custom_prefix=?, email_to=?,
          discord_forum=?, spreadsheet_id=?, sheet_name=?, google_credential_id=?, email_credential_id=?,
-         discord_guild_id=?, discord_channel_id=?, discord_threaded=?, discord_role_ids=?
+         discord_guild_id=?, discord_channel_id=?, discord_threaded=?, discord_role_ids=?, discord_lock_emojis=?
      WHERE id=?`,
     [
       label,
@@ -334,6 +413,7 @@ export async function updateChannel(access: UserAccess, id: number, body: Channe
       discord_channel_id,
       discord_threaded,
       discord_role_ids,
+      discord_lock_emojis,
       id,
     ],
   )

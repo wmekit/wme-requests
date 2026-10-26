@@ -10,6 +10,7 @@ import type {
   CredentialType,
   DiscordGuild,
   DiscordGuildChannel,
+  DiscordGuildEmoji,
   DiscordGuildRole,
   Me,
   PushSubscription,
@@ -215,6 +216,8 @@ export interface ChannelFormValues {
   discord_channel_id: string | null
   discord_threaded: boolean
   discord_role_ids: string[]
+  // discord_bot only — lock level ("1"–"7") → emoji id from useDiscordGuildEmojis.
+  discord_lock_emojis: Record<string, string | null>
 }
 
 export function useCreateChannel() {
@@ -279,6 +282,15 @@ export function useDiscordGuildRoles(countryId: string | null, guildId: string |
   return useQuery({
     queryKey: ['discord-guild-roles', countryId, guildId],
     queryFn: () => apiFetch<DiscordGuildRole[]>(`/countries/${countryId}/discord-guilds/${guildId}/roles`),
+    enabled: !!countryId && !!guildId,
+    retry: false,
+  })
+}
+
+export function useDiscordGuildEmojis(countryId: string | null, guildId: string | null) {
+  return useQuery({
+    queryKey: ['discord-guild-emojis', countryId, guildId],
+    queryFn: () => apiFetch<DiscordGuildEmoji[]>(`/countries/${countryId}/discord-guilds/${guildId}/emojis`),
     enabled: !!countryId && !!guildId,
     retry: false,
   })

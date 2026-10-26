@@ -7,6 +7,8 @@ import { sendPush } from './push'
 import {
   discordApi,
   DiscordApiError,
+  emojiMention,
+  type GuildEmoji,
   UNKNOWN_CHANNEL,
   interactionsConfigured,
   requestButtons,
@@ -52,6 +54,8 @@ export interface NotificationChannel {
   discord_channel_id: string | null
   discord_threaded: number
   discord_role_ids: string | null
+  // JSON: lock level → custom emoji, see resolveDiscordLockEmojis in ./channels.
+  discord_lock_emojis: string | null
 }
 
 export interface RequestRow {
@@ -196,10 +200,15 @@ async function sendSlackThreaded(
   )
 }
 
-// Shared by the webhook and bot Discord senders, so both post identical messages.
-function buildDiscordPayload(msg: ReturnType<typeof buildMessage>, prefix: string | null) {
+// Shared by the webhook and bot Discord senders, so both post identical messages. The bot sender
+// can pass the lock level's custom emoji, shown ahead of the level in the embed.
+function buildDiscordPayload(msg: ReturnType<typeof buildMessage>, prefix: string | null, lockEmoji?: string | null) {
   const rankSuffix = msg.editorRank != null ? ` (Rank ${msg.editorRank})` : ''
   const lines = bodyLines(msg)
+  if (lockEmoji && msg.lockLevel != null) {
+    const i = lines.indexOf(`Lock Level: ${msg.lockLevel}`)
+    if (i >= 0) lines[i] = `Lock Level: ${lockEmoji} ${msg.lockLevel}`
+  }
   if (msg.submittedBy) lines.push(`Submitted by: [${msg.submittedBy}](${userProfileUrl(msg.submittedBy)})${rankSuffix}`)
   return {
     content: prefix || undefined,
@@ -233,6 +242,17 @@ async function sendDiscord(
   })
 }
 
+// The channel's custom emoji for a lock level, as message text (`<:L5:123>`), or null for none.
+function discordLockEmoji(channel: NotificationChannel, lockLevel: number | null) {
+  if (lockLevel == null || !channel.discord_lock_emojis) return null
+  try {
+    const emoji = (JSON.parse(channel.discord_lock_emojis) as Record<string, GuildEmoji>)[String(lockLevel)]
+    return emoji ? emojiMention(emoji) : null
+  } catch {
+    return null
+  }
+}
+
 // Posts as this app's own bot (src/lib/discord-bot.ts). Unlike the webhook sender, failures
 // throw with Discord's reason (e.g. the bot was removed from the server), which the Test button
 // shows. allowed_mentions is explicit so mentions in the prefix still ping; forum channels get
@@ -247,11 +267,12 @@ async function sendDiscord(
 // thread buttons (src/lib/discord-interactions.ts).
 async function sendDiscordBot(channel: NotificationChannel, msg: ReturnType<typeof buildMessage>, prefix: string | null) {
   if (!channel.discord_channel_id) throw new Error('No Discord channel configured for this channel')
-  // Role pings go at the start of the message's content, ahead of the prefix.
+  // Role pings and the lock level's emoji share the first line of the content, ahead of the prefix.
   const roleMentions = (channel.discord_role_ids?.split(',') ?? []).map((r) => `<@&${r}>`).join(' ')
-  const content = [roleMentions, prefix].filter(Boolean).join('\n') || null
+  const lockEmoji = discordLockEmoji(channel, msg.lockLevel)
+  const content = [[roleMentions, lockEmoji].filter(Boolean).join(' '), prefix].filter(Boolean).join('\n') || null
   const message = {
-    ...buildDiscordPayload(msg, content),
+    ...buildDiscordPayload(msg, content, lockEmoji),
     allowed_mentions: { parse: ['users', 'roles', 'everyone'] },
     ...(channel.discord_threaded && msg.requestId != null && interactionsConfigured()
       ? { components: requestButtons(msg.requestId) }
@@ -630,7 +651,8 @@ export async function sendTestMessage(
       title: `Test Notification — ${channel.label}`,
       color: 0x2ecc71,
       permalink: 'https://www.waze.com/editor',
-      lockLevel: null,
+      // Matches the lock_level var above, so a Discord (Bot) channel's L3 emoji shows in the test.
+      lockLevel: channel.platform === 'discord_bot' && channel.discord_lock_emojis ? 3 : null,
       notes: `This is a test message from WME Requests, confirming the "${channel.label}" channel is configured correctly.`,
       submittedBy: null,
       editorRank: null,

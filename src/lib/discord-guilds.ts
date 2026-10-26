@@ -8,6 +8,7 @@ import {
   encodeInstallState,
   exchangeInstallCode,
   isBotConfigured,
+  listGuildEmojis,
   listGuildRoles,
   listGuildTextChannels,
 } from './discord-bot'
@@ -52,6 +53,16 @@ export async function getDiscordGuildRoles(access: UserAccess, countryId: number
   if (!(await isGuildLinked(countryId, guildId))) return err('Discord server not linked to this country', 404)
   try {
     return json(await listGuildRoles(guildId))
+  } catch (e) {
+    return err((e as Error).message, 502)
+  }
+}
+
+export async function getDiscordGuildEmojis(access: UserAccess, countryId: number, guildId: string) {
+  if (!canAccessCountry(access, countryId)) return err('Country not found', 404)
+  if (!(await isGuildLinked(countryId, guildId))) return err('Discord server not linked to this country', 404)
+  try {
+    return json(await listGuildEmojis(guildId))
   } catch (e) {
     return err((e as Error).message, 502)
   }

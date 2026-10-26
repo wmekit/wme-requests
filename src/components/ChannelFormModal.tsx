@@ -1,18 +1,32 @@
 import { useEffect, useState } from 'react'
-import { Button, Checkbox, Code, Group, Loader, Modal, MultiSelect, Select, Stack, Text, TextInput } from '@mantine/core'
+import {
+  Button,
+  Checkbox,
+  Code,
+  Group,
+  Loader,
+  Modal,
+  MultiSelect,
+  Select,
+  SimpleGrid,
+  Stack,
+  Text,
+  TextInput,
+} from '@mantine/core'
 import { Plus } from 'lucide-react'
 import { useForm } from '@mantine/form'
 import {
   useCreateChannel,
   useCredentials,
   useDiscordGuildChannels,
+  useDiscordGuildEmojis,
   useDiscordGuildRoles,
   useDiscordGuilds,
   useRegions,
   useUpdateChannel,
   type ChannelFormValues,
 } from '@/lib/queries'
-import type { Channel, DiscordGuildChannel } from '@/lib/types'
+import type { Channel, DiscordGuildChannel, DiscordGuildEmoji } from '@/lib/types'
 import CredentialsModal from '@/components/CredentialsModal'
 import VariableTextInput from '@/components/VariableTextInput'
 import { CUSTOM_PREFIX_VARIABLES } from '@/lib/templateVariables'
@@ -66,6 +80,7 @@ const EMPTY_VALUES: ChannelFormValues = {
   discord_channel_id: null,
   discord_threaded: false,
   discord_role_ids: [],
+  discord_lock_emojis: {},
 }
 
 // Select data for a Discord server's channels: uncategorised ones first, then one group per
@@ -82,6 +97,27 @@ function discordChannelOptions(channels: DiscordGuildChannel[]) {
     else groups.set(c.parentName, [...(groups.get(c.parentName) ?? []), option(c)])
   }
   return [...ungrouped, ...[...groups].map(([group, items]) => ({ group, items }))]
+}
+
+const LOCK_LEVELS = ['1', '2', '3', '4', '5', '6', '7']
+
+function emojiImageUrl(e: DiscordGuildEmoji) {
+  return `https://cdn.discordapp.com/emojis/${e.id}.${e.animated ? 'gif' : 'webp'}?size=32`
+}
+
+function EmojiImage({ emoji }: Readonly<{ emoji: DiscordGuildEmoji }>) {
+  return <img src={emojiImageUrl(emoji)} alt="" width={20} height={20} style={{ objectFit: 'contain' }} />
+}
+
+// A stored discord_lock_emojis value (level → { id, name, animated }) as the form's level → id.
+function lockEmojiIds(stored: string | null): Record<string, string | null> {
+  if (!stored) return {}
+  try {
+    const parsed = JSON.parse(stored) as Record<string, DiscordGuildEmoji>
+    return Object.fromEntries(Object.entries(parsed).map(([level, e]) => [level, e.id]))
+  } catch {
+    return {}
+  }
 }
 
 export default function ChannelFormModal({ opened, onClose, countryId, channel }: Readonly<Props>) {
@@ -151,6 +187,7 @@ export default function ChannelFormModal({ opened, onClose, countryId, channel }
               discord_channel_id: channel.discord_channel_id,
               discord_threaded: !!channel.discord_threaded,
               discord_role_ids: channel.discord_role_ids?.split(',') ?? [],
+              discord_lock_emojis: lockEmojiIds(channel.discord_lock_emojis),
             }
           : EMPTY_VALUES,
       )
@@ -169,6 +206,13 @@ export default function ChannelFormModal({ opened, onClose, countryId, channel }
     countryId,
     opened && form.values.platform === 'discord_bot' ? form.values.discord_guild_id : null,
   )
+
+  const discordEmojisQuery = useDiscordGuildEmojis(
+    countryId,
+    opened && form.values.platform === 'discord_bot' ? form.values.discord_guild_id : null,
+  )
+  const discordEmojis = discordEmojisQuery.data ?? []
+  const emojiById = new Map(discordEmojis.map((e) => [e.id, e]))
 
   async function handleSubmit(values: ChannelFormValues) {
     const usesWebhookUrl =
@@ -203,6 +247,8 @@ export default function ChannelFormModal({ opened, onClose, countryId, channel }
       discord_channel_id: values.platform === 'discord_bot' ? values.discord_channel_id : null,
       discord_threaded: values.platform === 'discord_bot' ? values.discord_threaded : false,
       discord_role_ids: values.platform === 'discord_bot' ? values.discord_role_ids : [],
+      discord_lock_emojis:
+        values.platform === 'discord_bot' && values.event_type !== 'imagery' ? values.discord_lock_emojis : {},
     }
     try {
       if (isEdit && channel) {
@@ -332,6 +378,7 @@ export default function ChannelFormModal({ opened, onClose, countryId, channel }
                       form.setFieldValue('discord_guild_id', v)
                       form.setFieldValue('discord_channel_id', null)
                       form.setFieldValue('discord_role_ids', [])
+                      form.setFieldValue('discord_lock_emojis', {})
                     }}
                     error={form.errors.discord_guild_id}
                     disabled={saving || !discordGuilds.length}
@@ -377,6 +424,50 @@ export default function ChannelFormModal({ opened, onClose, countryId, channel }
                   rightSection={discordRolesQuery.isFetching ? <Loader size="xs" /> : undefined}
                   disabled={saving || !form.values.discord_guild_id}
                 />
+                {form.values.event_type !== 'imagery' && (
+                  <div>
+                    <Text size="sm" fw={500}>
+                      Lock level emojis (optional)
+                    </Text>
+                    <Text size="xs" c="dimmed" mb={4}>
+                      One of the server's custom emojis per lock level, shown next to the role pings and the lock level
+                      in each notification.
+                      {discordEmojisQuery.error ? ` ${discordEmojisQuery.error.message}` : ''}
+                    </Text>
+                    <SimpleGrid cols={{ base: 2, xs: 4 }} spacing="xs" verticalSpacing="xs">
+                      {LOCK_LEVELS.map((level) => {
+                        const selected = emojiById.get(form.values.discord_lock_emojis[level] ?? '')
+                        return (
+                          <Select
+                            key={level}
+                            label={`L${level}`}
+                            placeholder={form.values.discord_guild_id ? 'None' : '—'}
+                            data={discordEmojis.map((e) => ({ value: e.id, label: `:${e.name}:` }))}
+                            renderOption={({ option }) => {
+                              const emoji = emojiById.get(option.value)
+                              return (
+                                <Group gap={6} wrap="nowrap">
+                                  {emoji && <EmojiImage emoji={emoji} />}
+                                  <Text size="sm">{option.label}</Text>
+                                </Group>
+                              )
+                            }}
+                            leftSection={selected ? <EmojiImage emoji={selected} /> : undefined}
+                            rightSection={discordEmojisQuery.isFetching ? <Loader size="xs" /> : undefined}
+                            searchable
+                            clearable
+                            nothingFoundMessage="No custom emojis"
+                            value={form.values.discord_lock_emojis[level] ?? null}
+                            onChange={(v) =>
+                              form.setFieldValue('discord_lock_emojis', { ...form.values.discord_lock_emojis, [level]: v })
+                            }
+                            disabled={saving || !form.values.discord_guild_id}
+                          />
+                        )
+                      })}
+                    </SimpleGrid>
+                  </div>
+                )}
                 <Checkbox
                   label="Thread requests from the same submitter"
                   description="Consecutive requests from the same submitter on the same day reply in one thread instead of posting separately — in a forum, as replies to the first request's post. Each request gets Complete, Reject and Close thread buttons for anyone with Manage Threads."

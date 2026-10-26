@@ -199,6 +199,31 @@ export async function listGuildRoles(guildId: string): Promise<GuildRole[]> {
     .map((r) => ({ id: r.id, name: r.name, color: r.color }))
 }
 
+export interface GuildEmoji {
+  id: string
+  name: string
+  animated: boolean
+}
+
+/**
+ * The server's custom emojis, by name — minus ones that are unavailable (e.g. lost with a
+ * boost level). The bot can use its own server's emojis without any extra permission.
+ */
+export async function listGuildEmojis(guildId: string): Promise<GuildEmoji[]> {
+  const all = await discordApi<Array<{ id: string; name: string | null; animated?: boolean; available?: boolean }>>(
+    `/guilds/${encodeURIComponent(guildId)}/emojis`,
+  )
+  return all
+    .filter((e) => e.available !== false && e.name)
+    .map((e) => ({ id: e.id, name: e.name!, animated: !!e.animated }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+}
+
+/** How a custom emoji is written in message text, e.g. `<:L5:123>` or `<a:L5:123>`. */
+export function emojiMention(e: GuildEmoji) {
+  return `<${e.animated ? 'a' : ''}:${e.name}:${e.id}>`
+}
+
 /** Throws (e.g. "Missing Access", "Unknown Channel") if the bot can't see the channel. */
 export function getChannel(channelId: string) {
   return discordApi<DiscordChannel>(`/channels/${encodeURIComponent(channelId)}`)

@@ -58,6 +58,8 @@ export interface Channel {
   discord_threaded: number
   // discord_bot only — comma-separated role ids pinged in every notification.
   discord_role_ids: string | null
+  // discord_bot only — JSON: lock level ("1"–"7") → { id, name, animated } custom emoji.
+  discord_lock_emojis: string | null
 }
 
 export interface Credential {
@@ -173,6 +175,13 @@ export interface DiscordGuildRole {
   id: string
   name: string
   color: number
+}
+
+// A custom emoji in a linked Discord server.
+export interface DiscordGuildEmoji {
+  id: string
+  name: string
+  animated: boolean
 }
 
 // A postable channel in a linked Discord server. type: 0 text, 5 announcement, 15 forum.
