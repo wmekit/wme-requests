@@ -201,13 +201,13 @@ async function sendSlackThreaded(
 }
 
 // Shared by the webhook and bot Discord senders, so both post identical messages. The bot sender
-// can pass the lock level's custom emoji, shown ahead of the level in the embed.
+// can pass the lock level's custom emoji, shown in place of the level number in the embed.
 function buildDiscordPayload(msg: ReturnType<typeof buildMessage>, prefix: string | null, lockEmoji?: string | null) {
   const rankSuffix = msg.editorRank != null ? ` (Rank ${msg.editorRank})` : ''
   const lines = bodyLines(msg)
   if (lockEmoji && msg.lockLevel != null) {
     const i = lines.indexOf(`Lock Level: ${msg.lockLevel}`)
-    if (i >= 0) lines[i] = `Lock Level: ${lockEmoji} ${msg.lockLevel}`
+    if (i >= 0) lines[i] = `Lock Level: ${lockEmoji}`
   }
   if (msg.submittedBy) lines.push(`Submitted by: [${msg.submittedBy}](${userProfileUrl(msg.submittedBy)})${rankSuffix}`)
   return {
