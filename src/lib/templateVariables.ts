@@ -18,3 +18,9 @@ export const CUSTOM_PREFIX_VARIABLES: readonly TemplateVariable[] = [
   { key: 'type', description: 'downlock, uplock, imagery, accept_pur, or decline_pur' },
   { key: 'submitted_by', description: "Submitter's Waze username" },
 ]
+
+// Discord (Bot) thread/forum post titles — the prefix variables plus the day the thread started.
+export const THREAD_TITLE_VARIABLES: readonly TemplateVariable[] = [
+  ...CUSTOM_PREFIX_VARIABLES,
+  { key: 'date', description: 'Today\'s date (UTC), e.g. 2026-10-27' },
+]

@@ -60,6 +60,8 @@ export interface Channel {
   discord_role_ids: string | null
   // discord_bot only — JSON: lock level ("1"–"7") → { id, name, animated } custom emoji.
   discord_lock_emojis: string | null
+  // discord_bot only — template for thread/forum post names, null for the default.
+  discord_thread_title: string | null
 }
 
 export interface Credential {

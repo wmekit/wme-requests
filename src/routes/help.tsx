@@ -77,6 +77,11 @@ const SECTIONS: HelpSection[] = [
         request gets <strong>Complete</strong>, <strong>Reject</strong> and <strong>Close thread</strong> buttons,
         usable by anyone with the Manage Threads permission in that channel.
       </>,
+      <>
+        Optionally set a <strong>Thread title</strong> for the threads and forum posts the bot creates — paste in emoji
+        and use variables like <code>{'{lock_level}'}</code>, <code>{'{submitted_by}'}</code> or{' '}
+        <code>{'{date}'}</code>.
+      </>,
     ],
   },
   {

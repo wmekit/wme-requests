@@ -56,6 +56,7 @@ export interface NotificationChannel {
   discord_role_ids: string | null
   // JSON: lock level → custom emoji, see resolveDiscordLockEmojis in ./channels.
   discord_lock_emojis: string | null
+  discord_thread_title: string | null
 }
 
 export interface RequestRow {
@@ -253,6 +254,17 @@ function discordLockEmoji(channel: NotificationChannel, lockLevel: number | null
   }
 }
 
+// Name for a thread or forum post the bot creates: the channel's discord_thread_title template
+// when set (same variables as the prefix, plus {date}), else `fallback`. Discord names are one
+// line of up to 100 characters; pasted Unicode emoji work, custom <:emoji:id> ones show as text.
+function discordThreadName(channel: NotificationChannel, vars: PrefixVars, today: string, fallback: string) {
+  const custom = channel.discord_thread_title
+    ? applyPrefixTemplate(channel.discord_thread_title, { ...vars, date: today }).replace(/\s+/g, ' ').trim()
+    : ''
+  // Cut by code point so an emoji isn't split in half.
+  return Array.from(custom || fallback).slice(0, 100).join('')
+}
+
 // Posts as this app's own bot (src/lib/discord-bot.ts). Unlike the webhook sender, failures
 // throw with Discord's reason (e.g. the bot was removed from the server), which the Test button
 // shows. allowed_mentions is explicit so mentions in the prefix still ping; forum channels get
@@ -265,7 +277,12 @@ function discordLockEmoji(channel: NotificationChannel, lockLevel: number | null
 // A thread started from a message shares its id, so last_thread_ts holding that message id is
 // enough either way. Threaded channels' request messages also get Complete / Reject / Close
 // thread buttons (src/lib/discord-interactions.ts).
-async function sendDiscordBot(channel: NotificationChannel, msg: ReturnType<typeof buildMessage>, prefix: string | null) {
+async function sendDiscordBot(
+  channel: NotificationChannel,
+  msg: ReturnType<typeof buildMessage>,
+  prefix: string | null,
+  vars: PrefixVars,
+) {
   if (!channel.discord_channel_id) throw new Error('No Discord channel configured for this channel')
   // Role pings and the lock level's emoji share the first line of the content, ahead of the prefix.
   const roleMentions = (channel.discord_role_ids?.split(',') ?? []).map((r) => `<@&${r}>`).join(' ')
@@ -301,7 +318,9 @@ async function sendDiscordBot(channel: NotificationChannel, msg: ReturnType<type
         // No thread on the first request's message yet — start one, then reply in it.
         await discordApi(`/channels/${id}/messages/${thread}/threads`, {
           method: 'POST',
-          body: JSON.stringify({ name: `Requests from ${msg.submittedBy} — ${today}`.slice(0, 100) }),
+          body: JSON.stringify({
+            name: discordThreadName(channel, vars, today, `Requests from ${msg.submittedBy} — ${today}`),
+          }),
         })
         await reply()
       }
@@ -316,7 +335,7 @@ async function sendDiscordBot(channel: NotificationChannel, msg: ReturnType<type
   const posted = isForum
     ? await discordApi<{ id: string }>(`/channels/${id}/threads`, {
         method: 'POST',
-        body: JSON.stringify({ name: (prefix || msg.title).slice(0, 100), message }),
+        body: JSON.stringify({ name: discordThreadName(channel, vars, today, prefix || msg.title), message }),
       })
     : await discordApi<{ id: string }>(`/channels/${id}/messages`, { method: 'POST', body: JSON.stringify(message) })
 
@@ -550,7 +569,7 @@ async function dispatchChannel(channel: NotificationChannel, msg: ReturnType<typ
     if (channel.platform === 'slack_threaded') await sendSlackThreaded(channel, msg, prefix)
     if (channel.platform === 'discord' && channel.webhook_url)
       await sendDiscord(channel.webhook_url, msg, prefix, !!channel.discord_forum)
-    if (channel.platform === 'discord_bot') await sendDiscordBot(channel, msg, prefix)
+    if (channel.platform === 'discord_bot') await sendDiscordBot(channel, msg, prefix, vars)
     if (channel.platform === 'telegram' && channel.bot_token && channel.chat_id)
       await sendTelegram(channel.bot_token, channel.chat_id, msg, prefix)
     if (channel.platform === 'email' && channel.email_to)

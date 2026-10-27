@@ -29,7 +29,7 @@ import {
 import type { Channel, DiscordGuildChannel, DiscordGuildEmoji } from '@/lib/types'
 import CredentialsModal from '@/components/CredentialsModal'
 import VariableTextInput from '@/components/VariableTextInput'
-import { CUSTOM_PREFIX_VARIABLES } from '@/lib/templateVariables'
+import { CUSTOM_PREFIX_VARIABLES, THREAD_TITLE_VARIABLES } from '@/lib/templateVariables'
 
 interface Props {
   opened: boolean
@@ -81,6 +81,7 @@ const EMPTY_VALUES: ChannelFormValues = {
   discord_threaded: false,
   discord_role_ids: [],
   discord_lock_emojis: {},
+  discord_thread_title: '',
 }
 
 // Select data for a Discord server's channels: uncategorised ones first, then one group per
@@ -188,6 +189,7 @@ export default function ChannelFormModal({ opened, onClose, countryId, channel }
               discord_threaded: !!channel.discord_threaded,
               discord_role_ids: channel.discord_role_ids?.split(',') ?? [],
               discord_lock_emojis: lockEmojiIds(channel.discord_lock_emojis),
+              discord_thread_title: channel.discord_thread_title ?? '',
             }
           : EMPTY_VALUES,
       )
@@ -212,6 +214,7 @@ export default function ChannelFormModal({ opened, onClose, countryId, channel }
     opened && form.values.platform === 'discord_bot' ? form.values.discord_guild_id : null,
   )
   const discordEmojis = discordEmojisQuery.data ?? []
+  const selectedDiscordChannel = discordChannelsQuery.data?.find((c) => c.id === form.values.discord_channel_id)
   const emojiById = new Map(discordEmojis.map((e) => [e.id, e]))
 
   async function handleSubmit(values: ChannelFormValues) {
@@ -249,6 +252,7 @@ export default function ChannelFormModal({ opened, onClose, countryId, channel }
       discord_role_ids: values.platform === 'discord_bot' ? values.discord_role_ids : [],
       discord_lock_emojis:
         values.platform === 'discord_bot' && values.event_type !== 'imagery' ? values.discord_lock_emojis : {},
+      discord_thread_title: values.platform === 'discord_bot' ? values.discord_thread_title?.trim() || null : null,
     }
     try {
       if (isEdit && channel) {
@@ -474,6 +478,23 @@ export default function ChannelFormModal({ opened, onClose, countryId, channel }
                   disabled={saving}
                   {...form.getInputProps('discord_threaded', { type: 'checkbox' })}
                 />
+                {(form.values.discord_threaded || selectedDiscordChannel?.type === 15) && (
+                  <VariableTextInput
+                    label="Thread title (optional)"
+                    placeholder={
+                      form.values.discord_threaded && selectedDiscordChannel?.type !== 15
+                        ? 'Requests from {submitted_by} — {date}'
+                        : 'e.g. 🔒 L{lock_level} {type} — {submitted_by}'
+                    }
+                    description="Names the threads and forum posts the bot creates. Paste in emoji (Unicode ones only — server emojis don't show in titles) and use the { } button to insert a variable. Up to 100 characters."
+                    disabled={saving}
+                    variables={THREAD_TITLE_VARIABLES}
+                    autosize
+                    minRows={1}
+                    maxRows={2}
+                    {...form.getInputProps('discord_thread_title')}
+                  />
+                )}
               </>
             )}
             {isGoogleSheets && (

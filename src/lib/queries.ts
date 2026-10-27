@@ -218,6 +218,7 @@ export interface ChannelFormValues {
   discord_role_ids: string[]
   // discord_bot only — lock level ("1"–"7") → emoji id from useDiscordGuildEmojis.
   discord_lock_emojis: Record<string, string | null>
+  discord_thread_title: string | null
 }
 
 export function useCreateChannel() {
