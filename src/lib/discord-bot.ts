@@ -1,5 +1,8 @@
 import { env } from 'cloudflare:workers'
 import { encryptSecret, decryptSecret } from './crypto'
+import type { GuildEmoji } from './notification-format'
+
+export type { GuildEmoji }
 
 // This app's own Discord bot, used by the "discord_bot" notification platform. Everything is
 // plain REST with the bot token — no gateway connection, so nothing to keep running beyond the
@@ -199,12 +202,6 @@ export async function listGuildRoles(guildId: string): Promise<GuildRole[]> {
     .map((r) => ({ id: r.id, name: r.name, color: r.color }))
 }
 
-export interface GuildEmoji {
-  id: string
-  name: string
-  animated: boolean
-}
-
 /**
  * The server's custom emojis, by name — minus ones that are unavailable (e.g. lost with a
  * boost level). The bot can use its own server's emojis without any extra permission.
@@ -217,11 +214,6 @@ export async function listGuildEmojis(guildId: string): Promise<GuildEmoji[]> {
     .filter((e) => e.available !== false && e.name)
     .map((e) => ({ id: e.id, name: e.name!, animated: !!e.animated }))
     .sort((a, b) => a.name.localeCompare(b.name))
-}
-
-/** How a custom emoji is written in message text, e.g. `<:L5:123>` or `<a:L5:123>`. */
-export function emojiMention(e: GuildEmoji) {
-  return `<${e.animated ? 'a' : ''}:${e.name}:${e.id}>`
 }
 
 /** Throws (e.g. "Missing Access", "Unknown Channel") if the bot can't see the channel. */

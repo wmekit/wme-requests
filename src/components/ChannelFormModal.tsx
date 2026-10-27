@@ -13,9 +13,10 @@ import {
   Text,
   TextInput,
 } from '@mantine/core'
-import { Plus } from 'lucide-react'
+import { Eye, Plus } from 'lucide-react'
 import { useForm } from '@mantine/form'
 import {
+  useCountries,
   useCreateChannel,
   useCredentials,
   useDiscordGuildChannels,
@@ -27,6 +28,7 @@ import {
   type ChannelFormValues,
 } from '@/lib/queries'
 import type { Channel, DiscordGuildChannel, DiscordGuildEmoji } from '@/lib/types'
+import ChannelPreview from '@/components/ChannelPreview'
 import CredentialsModal from '@/components/CredentialsModal'
 import VariableTextInput from '@/components/VariableTextInput'
 import { CUSTOM_PREFIX_VARIABLES, THREAD_TITLE_VARIABLES } from '@/lib/templateVariables'
@@ -131,6 +133,8 @@ export default function ChannelFormModal({ opened, onClose, countryId, channel }
   const emailCredentialsQuery = useCredentials()
   const emailCredentials = (emailCredentialsQuery.data ?? []).filter((c) => c.type.startsWith('email_'))
   const [addCredentialKind, setAddCredentialKind] = useState<'google' | 'email' | null>(null)
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const country = useCountries().data?.find((c) => String(c.id) === countryId)
 
   const form = useForm<ChannelFormValues>({
     initialValues: EMPTY_VALUES,
@@ -649,6 +653,15 @@ export default function ChannelFormModal({ opened, onClose, countryId, channel }
               {...form.getInputProps('custom_prefix')}
             />
             <Group justify="flex-end">
+              <Button
+                variant="subtle"
+                type="button"
+                mr="auto"
+                leftSection={<Eye size={14} />}
+                onClick={() => setPreviewOpen(true)}
+              >
+                Preview
+              </Button>
               <Button variant="default" type="button" onClick={onClose} disabled={saving}>
                 Cancel
               </Button>
@@ -658,6 +671,25 @@ export default function ChannelFormModal({ opened, onClose, countryId, channel }
             </Group>
           </Stack>
         </form>
+      </Modal>
+      <Modal
+        opened={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        title={`Preview — ${form.values.label.trim() || 'notification'}`}
+        size="xl"
+      >
+        {previewOpen && (
+          <ChannelPreview
+            values={form.values}
+            countryName={country?.name ?? 'Country'}
+            countryCode={country?.code ?? 'XX'}
+            regionName={regions.find((r) => r.id === form.values.region_id)?.name ?? null}
+            regionCode={regions.find((r) => r.id === form.values.region_id)?.code ?? null}
+            discordRoles={discordRolesQuery.data ?? []}
+            discordEmojis={discordEmojis}
+            discordChannelIsForum={selectedDiscordChannel?.type === 15}
+          />
+        )}
       </Modal>
       <CredentialsModal
         opened={!!addCredentialKind}

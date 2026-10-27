@@ -7,17 +7,30 @@ import { sendPush } from './push'
 import {
   discordApi,
   DiscordApiError,
-  emojiMention,
-  type GuildEmoji,
   UNKNOWN_CHANNEL,
   interactionsConfigured,
   requestButtons,
 } from './discord-bot'
+import {
+  LOCK_GATED_TYPES,
+  TYPE_META,
+  applyPrefixTemplate,
+  buildDiscordPayload,
+  buildEmail,
+  buildGoogleChatText,
+  buildPlainNotification,
+  buildSheetRow,
+  buildSlackPayload,
+  buildTelegramText,
+  buildWebhookBody,
+  discordBotContent,
+  discordLockEmoji,
+  discordThreadName,
+  GOOGLE_SHEET_HEADERS,
+  type NotificationMessage,
+  type PrefixVars,
+} from './notification-format'
 import { audiencePushSubscriptions, deleteSubscriptionById, type PushSubscriptionRow } from './subscriptions'
-
-// Same as LOCK_GATED_TYPES in ./requests — downlock/uplock and PUR requests carry a lock
-// level, imagery requests don't.
-const LOCK_GATED_TYPES = new Set<RequestType>(['downlock', 'uplock', 'accept_pur', 'decline_pur'])
 
 export interface NotificationChannel {
   id: number
@@ -72,31 +85,12 @@ export interface RequestRow {
   screenshot_key: string | null
 }
 
-function userProfileUrl(username: string) {
-  return `https://www.waze.com/user/editor/${encodeURIComponent(username)}`
-}
-
-// Variables available inside a channel's custom_prefix template, e.g. "L{lock_level}{country_code}".
-type PrefixVars = Record<string, string>
-
-function applyPrefixTemplate(template: string, vars: PrefixVars) {
-  return template.replace(/\{(\w+)\}/g, (match, key: string) => vars[key] ?? match)
-}
-
-const TYPE_META: Record<RequestType, { label: string; color: number }> = {
-  downlock: { label: 'Downlock Request', color: 0xe74c3c },
-  uplock: { label: 'Uplock Request', color: 0x9b59b6 },
-  imagery: { label: 'Imagery Request', color: 0x3498db },
-  accept_pur: { label: 'Accept PUR Request', color: 0x2ecc71 },
-  decline_pur: { label: 'Decline PUR Request', color: 0xf39c12 },
-}
-
-function buildMessage(request: RequestRow, countryName: string, regionName: string | null) {
+function buildMessage(request: RequestRow, countryName: string, regionName: string | null): NotificationMessage {
   const meta = TYPE_META[request.type]
   const place = regionName ? `${regionName}, ${countryName}` : countryName
   const title = `${meta.label} — ${place}`
   return {
-    requestId: request.id as number | null,
+    requestId: request.id,
     title,
     color: meta.color,
     permalink: request.permalink,
@@ -108,55 +102,7 @@ function buildMessage(request: RequestRow, countryName: string, regionName: stri
   }
 }
 
-// Plain (unescaped) permalink/lock-level/notes lines shared by Discord and Telegram —
-// the submitter line is built separately by each platform since it includes a link.
-function bodyLines(msg: ReturnType<typeof buildMessage>) {
-  const lines = [`Permalink: ${msg.permalink}`]
-  if (msg.lockLevel != null) lines.push(`Lock Level: ${msg.lockLevel}`)
-  if (msg.notes) lines.push(`Notes: ${msg.notes}`)
-  return lines
-}
-
-function hexColor(color: number) {
-  return `#${color.toString(16).padStart(6, '0')}`
-}
-
-// Shared Block Kit builder for both plain and threaded Slack channels — a colored side bar
-// via a legacy "attachment" wrapping modern blocks, with fields laid out in a grid. (Incoming
-// webhooks can't open a true modal, which requires a trigger_id from a live user interaction.)
-function buildSlackPayload(msg: ReturnType<typeof buildMessage>, prefix: string | null) {
-  const rankSuffix = msg.editorRank != null ? ` (Rank ${msg.editorRank})` : ''
-  const fields: Array<{ type: 'mrkdwn'; text: string }> = [
-    { type: 'mrkdwn', text: `*Permalink:*\n<${msg.permalink}|Open>` },
-  ]
-  if (msg.lockLevel != null) fields.push({ type: 'mrkdwn', text: `*Lock Level:*\n${msg.lockLevel}` })
-  if (msg.submittedBy) {
-    fields.push({
-      type: 'mrkdwn',
-      text: `*Submitted by:*\n<${userProfileUrl(msg.submittedBy)}|${msg.submittedBy}>${rankSuffix}`,
-    })
-  }
-
-  const blocks: unknown[] = [
-    { type: 'section', text: { type: 'mrkdwn', text: `*${msg.title}*` } },
-    { type: 'section', fields },
-  ]
-  if (msg.notes) {
-    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `*Notes:*\n${msg.notes}` } })
-  }
-  if (msg.screenshotUrl) {
-    blocks.push({ type: 'image', image_url: msg.screenshotUrl, alt_text: 'Map viewport screenshot' })
-  }
-
-  return {
-    // Fallback/notification-preview text — also where the prefix's @mentions actually notify,
-    // since attachment blocks aren't reliably parsed for that the same way.
-    text: prefix || msg.title,
-    attachments: [{ color: hexColor(msg.color), blocks }],
-  }
-}
-
-async function sendSlack(webhookUrl: string, msg: ReturnType<typeof buildMessage>, prefix: string | null) {
+async function sendSlack(webhookUrl: string, msg: NotificationMessage, prefix: string | null) {
   await fetch(webhookUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -171,7 +117,7 @@ async function sendSlack(webhookUrl: string, msg: ReturnType<typeof buildMessage
 // row so the next request can decide whether to join it.
 async function sendSlackThreaded(
   channel: NotificationChannel,
-  msg: ReturnType<typeof buildMessage>,
+  msg: NotificationMessage,
   prefix: string | null,
 ) {
   const botToken = channel.bot_token
@@ -201,35 +147,11 @@ async function sendSlackThreaded(
   )
 }
 
-// Shared by the webhook and bot Discord senders, so both post identical messages. The bot sender
-// can pass the lock level's custom emoji, shown in place of the level number in the embed.
-function buildDiscordPayload(msg: ReturnType<typeof buildMessage>, prefix: string | null, lockEmoji?: string | null) {
-  const rankSuffix = msg.editorRank != null ? ` (Rank ${msg.editorRank})` : ''
-  const lines = bodyLines(msg)
-  if (lockEmoji && msg.lockLevel != null) {
-    const i = lines.indexOf(`Lock Level: ${msg.lockLevel}`)
-    if (i >= 0) lines[i] = `Lock Level: ${lockEmoji}`
-  }
-  if (msg.submittedBy) lines.push(`Submitted by: [${msg.submittedBy}](${userProfileUrl(msg.submittedBy)})${rankSuffix}`)
-  return {
-    content: prefix || undefined,
-    embeds: [
-      {
-        title: msg.title,
-        description: lines.join('\n'),
-        color: msg.color,
-        timestamp: new Date().toISOString(),
-        ...(msg.screenshotUrl ? { image: { url: msg.screenshotUrl } } : {}),
-      },
-    ],
-  }
-}
-
 // Forum channels have no general message stream — every webhook post must create a new
 // post (thread) via `thread_name`, capped at Discord's 100-character thread name limit.
 async function sendDiscord(
   webhookUrl: string,
-  msg: ReturnType<typeof buildMessage>,
+  msg: NotificationMessage,
   prefix: string | null,
   isForumThread: boolean,
 ) {
@@ -241,28 +163,6 @@ async function sendDiscord(
       ...(isForumThread ? { thread_name: (prefix || msg.title).slice(0, 100) } : {}),
     }),
   })
-}
-
-// The channel's custom emoji for a lock level, as message text (`<:L5:123>`), or null for none.
-function discordLockEmoji(channel: NotificationChannel, lockLevel: number | null) {
-  if (lockLevel == null || !channel.discord_lock_emojis) return null
-  try {
-    const emoji = (JSON.parse(channel.discord_lock_emojis) as Record<string, GuildEmoji>)[String(lockLevel)]
-    return emoji ? emojiMention(emoji) : null
-  } catch {
-    return null
-  }
-}
-
-// Name for a thread or forum post the bot creates: the channel's discord_thread_title template
-// when set (same variables as the prefix, plus {date}), else `fallback`. Discord names are one
-// line of up to 100 characters; pasted Unicode emoji work, custom <:emoji:id> ones show as text.
-function discordThreadName(channel: NotificationChannel, vars: PrefixVars, today: string, fallback: string) {
-  const custom = channel.discord_thread_title
-    ? applyPrefixTemplate(channel.discord_thread_title, { ...vars, date: today }).replace(/\s+/g, ' ').trim()
-    : ''
-  // Cut by code point so an emoji isn't split in half.
-  return Array.from(custom || fallback).slice(0, 100).join('')
 }
 
 // Posts as this app's own bot (src/lib/discord-bot.ts). Unlike the webhook sender, failures
@@ -279,15 +179,13 @@ function discordThreadName(channel: NotificationChannel, vars: PrefixVars, today
 // thread buttons (src/lib/discord-interactions.ts).
 async function sendDiscordBot(
   channel: NotificationChannel,
-  msg: ReturnType<typeof buildMessage>,
+  msg: NotificationMessage,
   prefix: string | null,
   vars: PrefixVars,
 ) {
   if (!channel.discord_channel_id) throw new Error('No Discord channel configured for this channel')
-  // Role pings and the lock level's emoji share the first line of the content, ahead of the prefix.
-  const roleMentions = (channel.discord_role_ids?.split(',') ?? []).map((r) => `<@&${r}>`).join(' ')
-  const lockEmoji = discordLockEmoji(channel, msg.lockLevel)
-  const content = [[roleMentions, lockEmoji].filter(Boolean).join(' '), prefix].filter(Boolean).join('\n') || null
+  const lockEmoji = discordLockEmoji(channel.discord_lock_emojis, msg.lockLevel)
+  const content = discordBotContent(channel.discord_role_ids, lockEmoji, prefix)
   const message = {
     ...buildDiscordPayload(msg, content, lockEmoji),
     allowed_mentions: { parse: ['users', 'roles', 'everyone'] },
@@ -319,7 +217,7 @@ async function sendDiscordBot(
         await discordApi(`/channels/${id}/messages/${thread}/threads`, {
           method: 'POST',
           body: JSON.stringify({
-            name: discordThreadName(channel, vars, today, `Requests from ${msg.submittedBy} — ${today}`),
+            name: discordThreadName(channel.discord_thread_title, vars, today, `Requests from ${msg.submittedBy} — ${today}`),
           }),
         })
         await reply()
@@ -335,7 +233,7 @@ async function sendDiscordBot(
   const posted = isForum
     ? await discordApi<{ id: string }>(`/channels/${id}/threads`, {
         method: 'POST',
-        body: JSON.stringify({ name: discordThreadName(channel, vars, today, prefix || msg.title), message }),
+        body: JSON.stringify({ name: discordThreadName(channel.discord_thread_title, vars, today, prefix || msg.title), message }),
       })
     : await discordApi<{ id: string }>(`/channels/${id}/messages`, { method: 'POST', body: JSON.stringify(message) })
 
@@ -349,19 +247,11 @@ async function sendDiscordBot(
 
 // Google Chat's incoming webhook takes a plain { text } body — it supports a small markup
 // subset (*bold*, <url|label> links) but nothing like Slack's block/attachment layout.
-async function sendGoogleChat(webhookUrl: string, msg: ReturnType<typeof buildMessage>, prefix: string | null) {
-  const rankSuffix = msg.editorRank != null ? ` (Rank ${msg.editorRank})` : ''
-  const lines = [`*${msg.title}*`]
-  if (prefix) lines.push(prefix)
-  lines.push(`<${msg.permalink}|Open>`)
-  if (msg.lockLevel != null) lines.push(`Lock Level: ${msg.lockLevel}`)
-  if (msg.submittedBy) lines.push(`Submitted by: <${userProfileUrl(msg.submittedBy)}|${msg.submittedBy}>${rankSuffix}`)
-  if (msg.notes) lines.push(`Notes: ${msg.notes}`)
-
+async function sendGoogleChat(webhookUrl: string, msg: NotificationMessage, prefix: string | null) {
   await fetch(webhookUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text: lines.join('\n') }),
+    body: JSON.stringify({ text: buildGoogleChatText(msg, prefix) }),
   })
 }
 
@@ -369,11 +259,7 @@ async function sendGoogleChat(webhookUrl: string, msg: ReturnType<typeof buildMe
 // straight to the topic URL with headers would work too, but title/message would need to be
 // ASCII-safe (HTTP header values can't carry arbitrary Unicode), and request titles/notes
 // often aren't (e.g. em dashes). The JSON endpoint sidesteps that entirely.
-async function sendNtfy(topicUrl: string, token: string | null, msg: ReturnType<typeof buildMessage>, prefix: string | null) {
-  const rankSuffix = msg.editorRank != null ? ` (Rank ${msg.editorRank})` : ''
-  const lines = bodyLines(msg)
-  if (msg.submittedBy) lines.push(`Submitted by: ${msg.submittedBy}${rankSuffix}`)
-
+async function sendNtfy(topicUrl: string, token: string | null, msg: NotificationMessage, prefix: string | null) {
   const url = new URL(topicUrl)
   const topic = url.pathname.replace(/^\//, '')
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
@@ -384,8 +270,7 @@ async function sendNtfy(topicUrl: string, token: string | null, msg: ReturnType<
     headers,
     body: JSON.stringify({
       topic,
-      title: prefix ? `${prefix} ${msg.title}` : msg.title,
-      message: lines.join('\n'),
+      ...buildPlainNotification(msg, prefix),
       click: msg.permalink,
       ...(msg.screenshotUrl ? { attach: msg.screenshotUrl } : {}),
     }),
@@ -393,44 +278,21 @@ async function sendNtfy(topicUrl: string, token: string | null, msg: ReturnType<
 }
 
 // Gotify's application token is passed as a query param, not a header.
-async function sendGotify(serverUrl: string, token: string, msg: ReturnType<typeof buildMessage>, prefix: string | null) {
-  const rankSuffix = msg.editorRank != null ? ` (Rank ${msg.editorRank})` : ''
-  const lines = bodyLines(msg)
-  if (msg.submittedBy) lines.push(`Submitted by: ${msg.submittedBy}${rankSuffix}`)
-
+async function sendGotify(serverUrl: string, token: string, msg: NotificationMessage, prefix: string | null) {
   const base = serverUrl.endsWith('/') ? serverUrl.slice(0, -1) : serverUrl
   await fetch(`${base}/message?token=${encodeURIComponent(token)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      title: prefix ? `${prefix} ${msg.title}` : msg.title,
-      message: lines.join('\n'),
+      ...buildPlainNotification(msg, prefix),
       priority: 5,
       extras: { 'client::notification': { click: { url: msg.permalink } } },
     }),
   })
 }
 
-function escapeMarkdown(text: string) {
-  return String(text).replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, '\\$&')
-}
-
-// Telegram's MarkdownV2 link destinations only need ')' and '\' escaped — escaping
-// the whole URL with escapeMarkdown would also mangle '/' and ':' and break the link.
-function escapeTelegramLinkUrl(url: string) {
-  return url.replace(/([)\\])/g, String.raw`\$1`)
-}
-
-async function sendTelegram(botToken: string, chatId: string, msg: ReturnType<typeof buildMessage>, prefix: string | null) {
-  const prefixLine = prefix ? `${escapeMarkdown(prefix)}\n` : ''
-  const rankSuffix = msg.editorRank != null ? escapeMarkdown(` (Rank ${msg.editorRank})`) : ''
-  const lines = bodyLines(msg).map(escapeMarkdown)
-  if (msg.submittedBy) {
-    lines.push(
-      `Submitted by: [${escapeMarkdown(msg.submittedBy)}](${escapeTelegramLinkUrl(userProfileUrl(msg.submittedBy))})${rankSuffix}`,
-    )
-  }
-  const text = `*${escapeMarkdown(msg.title)}*\n${prefixLine}${lines.join('\n')}`
+async function sendTelegram(botToken: string, chatId: string, msg: NotificationMessage, prefix: string | null) {
+  const text = buildTelegramText(msg, prefix)
 
   // sendPhoto's caption is capped at 1024 chars (vs sendMessage's 4096) — unlikely to
   // matter for these short messages, but if it's ever exceeded Telegram rejects the
@@ -451,31 +313,8 @@ async function sendTelegram(botToken: string, chatId: string, msg: ReturnType<ty
   })
 }
 
-function escapeHtml(text: string) {
-  const entities: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
-  return String(text).replace(/[&<>"']/g, (c) => entities[c])
-}
-
-function buildEmailHtml(msg: ReturnType<typeof buildMessage>, prefix: string | null) {
-  const rankSuffix = msg.editorRank != null ? ` (Rank ${msg.editorRank})` : ''
-  const parts = [
-    prefix ? `<p style="color:#666;margin:0 0 12px">${escapeHtml(prefix)}</p>` : '',
-    `<h2 style="margin:0 0 12px">${escapeHtml(msg.title)}</h2>`,
-    `<p><a href="${escapeHtml(msg.permalink)}">${escapeHtml(msg.permalink)}</a></p>`,
-    msg.lockLevel != null ? `<p><strong>Lock Level:</strong> ${msg.lockLevel}</p>` : '',
-    msg.submittedBy
-      ? `<p><strong>Submitted by:</strong> <a href="${escapeHtml(userProfileUrl(msg.submittedBy))}">${escapeHtml(msg.submittedBy)}</a>${escapeHtml(rankSuffix)}</p>`
-      : '',
-    msg.notes ? `<p><strong>Notes:</strong><br>${escapeHtml(msg.notes).replaceAll('\n', '<br>')}</p>` : '',
-    msg.screenshotUrl
-      ? `<p><img src="${escapeHtml(msg.screenshotUrl)}" alt="Map viewport screenshot" style="max-width:100%"></p>`
-      : '',
-  ]
-  return parts.filter(Boolean).join('\n')
-}
-
 async function sendEmail(
-  msg: ReturnType<typeof buildMessage>,
+  msg: NotificationMessage,
   prefix: string | null,
   toEmail: string,
   emailCredentialId: number | null,
@@ -483,57 +322,28 @@ async function sendEmail(
   if (!emailCredentialId) throw new Error('No email credential configured for this channel')
   const credential = await resolveEmailCredential(emailCredentialId)
 
-  const rankSuffix = msg.editorRank != null ? ` (Rank ${msg.editorRank})` : ''
-  const lines = bodyLines(msg)
-  if (msg.submittedBy) lines.push(`Submitted by: ${msg.submittedBy}${rankSuffix} — ${userProfileUrl(msg.submittedBy)}`)
-  const subject = prefix ? `[${prefix}] ${msg.title}` : msg.title
+  const { subject, textBody, htmlBody } = buildEmail(msg, prefix)
 
   await dispatchEmail(credential, {
     to: toEmail,
     subject,
-    textBody: lines.join('\n'),
-    htmlBody: buildEmailHtml(msg, prefix),
+    textBody,
+    htmlBody,
   })
 }
 
-// Plain structured JSON for arbitrary custom integrations — no platform-specific
-// formatting, unlike the Slack/Discord/Telegram senders above.
-async function sendWebhook(webhookUrl: string, msg: ReturnType<typeof buildMessage>, prefix: string | null) {
+// Plain structured JSON for arbitrary custom integrations, see buildWebhookBody.
+async function sendWebhook(webhookUrl: string, msg: NotificationMessage, prefix: string | null) {
   await fetch(webhookUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      title: msg.title,
-      prefix,
-      permalink: msg.permalink,
-      lock_level: msg.lockLevel,
-      notes: msg.notes,
-      submitted_by: msg.submittedBy,
-      submitted_by_url: msg.submittedBy ? userProfileUrl(msg.submittedBy) : null,
-      editor_rank: msg.editorRank,
-      screenshot_url: msg.screenshotUrl,
-    }),
+    body: JSON.stringify(buildWebhookBody(msg, prefix)),
   })
 }
 
-const GOOGLE_SHEET_HEADERS = [
-  'Timestamp',
-  'Type',
-  'Country',
-  'Country Code',
-  'Region',
-  'Region Code',
-  'Permalink',
-  'Lock Level',
-  'Editor Rank',
-  'Notes',
-  'Submitted By',
-  'Screenshot URL',
-]
-
 async function sendGoogleSheet(
   channel: NotificationChannel,
-  msg: ReturnType<typeof buildMessage>,
+  msg: NotificationMessage,
   vars: PrefixVars,
 ) {
   if (!channel.spreadsheet_id) return
@@ -544,25 +354,12 @@ async function sendGoogleSheet(
     credentials,
     channel.spreadsheet_id,
     channel.sheet_name,
-    [
-      new Date().toISOString(),
-      vars.type,
-      vars.country_name,
-      vars.country_code,
-      vars.region_name,
-      vars.region_code,
-      msg.permalink,
-      msg.lockLevel ?? '',
-      msg.editorRank ?? '',
-      msg.notes ?? '',
-      msg.submittedBy ?? '',
-      msg.screenshotUrl ?? '',
-    ],
+    buildSheetRow(msg, vars, new Date().toISOString()),
     GOOGLE_SHEET_HEADERS,
   )
 }
 
-async function dispatchChannel(channel: NotificationChannel, msg: ReturnType<typeof buildMessage>, vars: PrefixVars) {
+async function dispatchChannel(channel: NotificationChannel, msg: NotificationMessage, vars: PrefixVars) {
   try {
     const prefix = channel.custom_prefix ? applyPrefixTemplate(channel.custom_prefix, vars) : null
     if (channel.platform === 'slack' && channel.webhook_url) await sendSlack(channel.webhook_url, msg, prefix)
@@ -607,7 +404,7 @@ async function audienceChannels(countryId: number, regionId: number | null, requ
 // Self-service push subscriptions (src/lib/subscriptions.ts) fire independently of the
 // admin-configured channels above — a matching subscription doesn't require any channel to
 // exist for that country/region.
-async function dispatchPush(sub: PushSubscriptionRow, msg: ReturnType<typeof buildMessage>) {
+async function dispatchPush(sub: PushSubscriptionRow, msg: NotificationMessage) {
   try {
     const result = await sendPush(
       { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
