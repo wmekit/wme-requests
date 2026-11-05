@@ -3,6 +3,7 @@ import {
   Button,
   Checkbox,
   Code,
+  Collapse,
   Group,
   Loader,
   Modal,
@@ -13,7 +14,7 @@ import {
   Text,
   TextInput,
 } from '@mantine/core'
-import { Eye, Plus } from 'lucide-react'
+import { ChevronDown, ChevronRight, Eye, Plus } from 'lucide-react'
 import { useForm } from '@mantine/form'
 import {
   useCountries,
@@ -84,6 +85,7 @@ const EMPTY_VALUES: ChannelFormValues = {
   discord_role_ids: [],
   discord_lock_emojis: {},
   discord_thread_title: '',
+  discord_lock_prefixes: {},
 }
 
 // Select data for a Discord server's channels: uncategorised ones first, then one group per
@@ -123,6 +125,16 @@ function lockEmojiIds(stored: string | null): Record<string, string | null> {
   }
 }
 
+// A stored discord_lock_prefixes value (JSON level → template) as the form's map.
+function lockPrefixes(stored: string | null): Record<string, string> {
+  if (!stored) return {}
+  try {
+    return JSON.parse(stored) as Record<string, string>
+  } catch {
+    return {}
+  }
+}
+
 export default function ChannelFormModal({ opened, onClose, countryId, channel }: Readonly<Props>) {
   const isEdit = !!channel
   const create = useCreateChannel()
@@ -134,6 +146,7 @@ export default function ChannelFormModal({ opened, onClose, countryId, channel }
   const emailCredentials = (emailCredentialsQuery.data ?? []).filter((c) => c.type.startsWith('email_'))
   const [addCredentialKind, setAddCredentialKind] = useState<'google' | 'email' | null>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [lockPrefixesOpen, setLockPrefixesOpen] = useState(false)
   const country = useCountries().data?.find((c) => String(c.id) === countryId)
 
   const form = useForm<ChannelFormValues>({
@@ -171,6 +184,8 @@ export default function ChannelFormModal({ opened, onClose, countryId, channel }
 
   useEffect(() => {
     if (opened) {
+      // Start expanded when editing a channel that already has level prefixes.
+      setLockPrefixesOpen(!!channel?.discord_lock_prefixes)
       form.setValues(
         channel
           ? {
@@ -194,6 +209,7 @@ export default function ChannelFormModal({ opened, onClose, countryId, channel }
               discord_role_ids: channel.discord_role_ids?.split(',') ?? [],
               discord_lock_emojis: lockEmojiIds(channel.discord_lock_emojis),
               discord_thread_title: channel.discord_thread_title ?? '',
+              discord_lock_prefixes: lockPrefixes(channel.discord_lock_prefixes),
             }
           : EMPTY_VALUES,
       )
@@ -257,6 +273,8 @@ export default function ChannelFormModal({ opened, onClose, countryId, channel }
       discord_lock_emojis:
         values.platform === 'discord_bot' && values.event_type !== 'imagery' ? values.discord_lock_emojis : {},
       discord_thread_title: values.platform === 'discord_bot' ? values.discord_thread_title?.trim() || null : null,
+      discord_lock_prefixes:
+        values.platform === 'discord' && values.event_type !== 'imagery' ? values.discord_lock_prefixes : {},
     }
     try {
       if (isEdit && channel) {
@@ -644,7 +662,11 @@ export default function ChannelFormModal({ opened, onClose, countryId, channel }
             <VariableTextInput
               label="Custom Prefix (optional)"
               placeholder="e.g. L{lock_level}{country_code}"
-              description="Prepended before the permalink on every message. Use the { } button to insert a variable."
+              description={
+                isDiscord && form.values.event_type !== 'imagery'
+                  ? "Prepended before the permalink on every message. Use the { } button to insert a variable. Overridden by a lock level's own prefix when set."
+                  : 'Prepended before the permalink on every message. Use the { } button to insert a variable.'
+              }
               disabled={saving}
               variables={CUSTOM_PREFIX_VARIABLES}
               autosize
@@ -652,6 +674,46 @@ export default function ChannelFormModal({ opened, onClose, countryId, channel }
               maxRows={4}
               {...form.getInputProps('custom_prefix')}
             />
+            {isDiscord && form.values.event_type !== 'imagery' && (
+              <div>
+                <Button
+                  variant="subtle"
+                  size="compact-sm"
+                  type="button"
+                  px={0}
+                  leftSection={lockPrefixesOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  onClick={() => setLockPrefixesOpen((o) => !o)}
+                >
+                  Prefix per lock level (optional)
+                  {(() => {
+                    const count = Object.values(form.values.discord_lock_prefixes).filter((v) => v?.trim()).length
+                    return count ? ` · ${count} set` : ''
+                  })()}
+                </Button>
+                <Collapse expanded={lockPrefixesOpen}>
+                  <Text size="xs" c="dimmed" mb={4}>
+                    For requests at a lock level with its own prefix, that prefix replaces the Custom Prefix above —
+                    e.g. to ping a different role for L5 requests. Same variables as the Custom Prefix.
+                  </Text>
+                  <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="xs" verticalSpacing="xs">
+                    {LOCK_LEVELS.map((level) => (
+                      <VariableTextInput
+                        key={level}
+                        label={`L${level}`}
+                        placeholder="Uses Custom Prefix"
+                        disabled={saving}
+                        variables={CUSTOM_PREFIX_VARIABLES}
+                        autosize
+                        minRows={1}
+                        maxRows={3}
+                        {...form.getInputProps(`discord_lock_prefixes.${level}`)}
+                        value={form.values.discord_lock_prefixes[level] ?? ''}
+                      />
+                    ))}
+                  </SimpleGrid>
+                </Collapse>
+              </div>
+            )}
             <Group justify="flex-end">
               <Button
                 variant="subtle"

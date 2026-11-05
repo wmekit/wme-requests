@@ -47,6 +47,12 @@ const SECTIONS: HelpSection[] = [
         Paste it into <Code>Webhook URL</Code>. If the target is a <strong>Forum</strong> channel, also enable
         "Post as a new thread" — each notification creates a new forum post rather than a reply.
       </>,
+      <>
+        Optionally open <strong>Prefix per lock level</strong> to give any of L1–L7 its own prefix (same variables as
+        the Custom Prefix) — e.g. <Code>{'<@&role id> L5 {country_code}'}</Code> to ping a role only for L5 requests.
+        A level's prefix replaces the Custom Prefix for requests at that level; other levels and imagery requests use
+        the Custom Prefix.
+      </>,
     ],
   },
   {

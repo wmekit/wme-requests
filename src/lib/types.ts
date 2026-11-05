@@ -62,6 +62,8 @@ export interface Channel {
   discord_lock_emojis: string | null
   // discord_bot only — template for thread/forum post names, null for the default.
   discord_thread_title: string | null
+  // discord (webhook) only — JSON: lock level ("1"–"7") → prefix template replacing custom_prefix.
+  discord_lock_prefixes: string | null
 }
 
 export interface Credential {

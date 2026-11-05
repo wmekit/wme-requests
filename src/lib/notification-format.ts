@@ -46,6 +46,30 @@ export function applyPrefixTemplate(template: string, vars: PrefixVars) {
   return template.replace(/\{(\w+)\}/g, (match, key: string) => vars[key] ?? match)
 }
 
+/**
+ * The prefix for a message: a channel's own prefix for the request's lock level when set
+ * (Discord webhook discord_lock_prefixes — stored JSON or the form's map), else the general
+ * custom prefix, with {variables} filled in. Null when neither is set.
+ */
+export function resolvePrefix(
+  general: string | null,
+  lockPrefixes: string | Record<string, string | null | undefined> | null,
+  lockLevel: number | null,
+  vars: PrefixVars,
+) {
+  let template = general?.trim() || null
+  if (lockLevel != null && lockPrefixes) {
+    try {
+      const map = typeof lockPrefixes === 'string' ? (JSON.parse(lockPrefixes) as Record<string, unknown>) : lockPrefixes
+      const own = map[String(lockLevel)]
+      if (typeof own === 'string' && own.trim()) template = own.trim()
+    } catch {
+      // Malformed JSON — fall back to the general prefix.
+    }
+  }
+  return template ? applyPrefixTemplate(template, vars) : null
+}
+
 /** How a custom emoji is written in message text, e.g. `<:L5:123>` or `<a:L5:123>`. */
 export function emojiMention(e: GuildEmoji) {
   return `<${e.animated ? 'a' : ''}:${e.name}:${e.id}>`

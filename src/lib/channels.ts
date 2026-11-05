@@ -56,6 +56,9 @@ interface ChannelBody {
   discord_lock_emojis?: Record<string, string | null> | null
   // discord_bot only — template for the names of threads/forum posts the bot creates, see sendDiscordBot.
   discord_thread_title?: string | null
+  // discord (webhook) only — a prefix template per lock level, "1"–"7", replacing custom_prefix
+  // for requests at that level. See resolvePrefix in ./notification-format.
+  discord_lock_prefixes?: Record<string, string | null> | null
 }
 
 // Resolves+validates an optional region_id against the channel's country. Returns the
@@ -158,6 +161,32 @@ async function resolveDiscordLockEmojis(
     value[level] = emoji
   }
   return { value: JSON.stringify(value) }
+}
+
+// For discord (webhook): each lock level ("1"–"7") may have its own prefix template. Stored as
+// JSON keyed by level, empties dropped. Null for none.
+const MAX_LOCK_PREFIX_LENGTH = 500
+function normalizeLockPrefixes(
+  map: Record<string, string | null> | null | undefined,
+): { value: string | null } | { error: string } {
+  if (map == null) return { value: null }
+  if (typeof map !== 'object' || Array.isArray(map)) {
+    return { error: 'discord_lock_prefixes must map lock levels to prefixes' }
+  }
+  const value: Record<string, string> = {}
+  for (const [level, prefix] of Object.entries(map).sort(([a], [b]) => a.localeCompare(b))) {
+    if (prefix == null) continue
+    if (!/^[1-7]$/.test(level) || typeof prefix !== 'string') {
+      return { error: 'discord_lock_prefixes must map lock levels 1–7 to prefixes' }
+    }
+    const trimmed = prefix.trim()
+    if (!trimmed) continue
+    if (trimmed.length > MAX_LOCK_PREFIX_LENGTH) {
+      return { error: `Lock level prefixes can be at most ${MAX_LOCK_PREFIX_LENGTH} characters` }
+    }
+    value[level] = trimmed
+  }
+  return { value: Object.keys(value).length ? JSON.stringify(value) : null }
 }
 
 // A stored discord_lock_emojis value as level → emoji id, for comparing against a request body.
@@ -264,11 +293,17 @@ export async function createChannel(access: UserAccess, countryId: number, body:
     if ('error' in emojis) return err(emojis.error)
     discordLockEmojis = emojis.value
   }
+  let discordLockPrefixes: string | null = null
+  if (platform === 'discord') {
+    const prefixes = normalizeLockPrefixes(body.discord_lock_prefixes)
+    if ('error' in prefixes) return err(prefixes.error)
+    discordLockPrefixes = prefixes.value
+  }
 
   const result = await dbRun(
     `INSERT INTO notification_channels
-       (country_id, region_id, label, platform, event_type, webhook_url, bot_token, chat_id, custom_prefix, email_to, discord_forum, spreadsheet_id, sheet_name, google_credential_id, email_credential_id, discord_guild_id, discord_channel_id, discord_threaded, discord_role_ids, discord_lock_emojis, discord_thread_title)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (country_id, region_id, label, platform, event_type, webhook_url, bot_token, chat_id, custom_prefix, email_to, discord_forum, spreadsheet_id, sheet_name, google_credential_id, email_credential_id, discord_guild_id, discord_channel_id, discord_threaded, discord_role_ids, discord_lock_emojis, discord_thread_title, discord_lock_prefixes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       countryId,
       resolvedRegion.id,
@@ -291,6 +326,7 @@ export async function createChannel(access: UserAccess, countryId: number, body:
       discordRoles,
       discordLockEmojis,
       discordBot ? body.discord_thread_title?.trim() || null : null,
+      discordLockPrefixes,
     ],
   )
   const row = await dbFirst<NotificationChannel>('SELECT * FROM notification_channels WHERE id = ?', [
@@ -394,11 +430,23 @@ export async function updateChannel(access: UserAccess, id: number, body: Channe
     }
   }
 
+  let discord_lock_prefixes: string | null = null
+  if (platform === 'discord') {
+    if (body.discord_lock_prefixes !== undefined) {
+      const prefixes = normalizeLockPrefixes(body.discord_lock_prefixes)
+      if ('error' in prefixes) return err(prefixes.error)
+      discord_lock_prefixes = prefixes.value
+    } else if (existing.platform === 'discord') {
+      discord_lock_prefixes = existing.discord_lock_prefixes
+    }
+  }
+
   await dbRun(
     `UPDATE notification_channels
      SET label=?, platform=?, event_type=?, region_id=?, webhook_url=?, bot_token=?, chat_id=?, custom_prefix=?, email_to=?,
          discord_forum=?, spreadsheet_id=?, sheet_name=?, google_credential_id=?, email_credential_id=?,
-         discord_guild_id=?, discord_channel_id=?, discord_threaded=?, discord_role_ids=?, discord_lock_emojis=?, discord_thread_title=?
+         discord_guild_id=?, discord_channel_id=?, discord_threaded=?, discord_role_ids=?, discord_lock_emojis=?, discord_thread_title=?,
+         discord_lock_prefixes=?
      WHERE id=?`,
     [
       label,
@@ -421,6 +469,7 @@ export async function updateChannel(access: UserAccess, id: number, body: Channe
       discord_role_ids,
       discord_lock_emojis,
       discord_thread_title,
+      discord_lock_prefixes,
       id,
     ],
   )

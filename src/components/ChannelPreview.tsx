@@ -6,7 +6,7 @@ import {
   GOOGLE_SHEET_HEADERS,
   LOCK_GATED_TYPES,
   TYPE_META,
-  applyPrefixTemplate,
+  resolvePrefix,
   buildDiscordPayload,
   buildEmail,
   buildGoogleChatText,
@@ -92,7 +92,12 @@ export default function ChannelPreview({
     type,
     submitted_by: SAMPLE_SUBMITTER,
   }
-  const prefix = values.custom_prefix?.trim() ? applyPrefixTemplate(values.custom_prefix.trim(), vars) : null
+  const prefix = resolvePrefix(
+    values.custom_prefix,
+    values.platform === 'discord' ? values.discord_lock_prefixes : null,
+    lockGated ? Number(lockLevel) : null,
+    vars,
+  )
 
   return (
     <Stack gap="sm">

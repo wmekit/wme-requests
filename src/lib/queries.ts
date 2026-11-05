@@ -219,6 +219,8 @@ export interface ChannelFormValues {
   // discord_bot only — lock level ("1"–"7") → emoji id from useDiscordGuildEmojis.
   discord_lock_emojis: Record<string, string | null>
   discord_thread_title: string | null
+  // discord (webhook) only — lock level ("1"–"7") → prefix template replacing custom_prefix.
+  discord_lock_prefixes: Record<string, string>
 }
 
 export function useCreateChannel() {

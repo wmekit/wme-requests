@@ -14,7 +14,7 @@ import {
 import {
   LOCK_GATED_TYPES,
   TYPE_META,
-  applyPrefixTemplate,
+  resolvePrefix,
   buildDiscordPayload,
   buildEmail,
   buildGoogleChatText,
@@ -70,6 +70,8 @@ export interface NotificationChannel {
   // JSON: lock level → custom emoji, see resolveDiscordLockEmojis in ./channels.
   discord_lock_emojis: string | null
   discord_thread_title: string | null
+  // discord (webhook) only — JSON: lock level ("1"–"7") → prefix template, see resolvePrefix.
+  discord_lock_prefixes: string | null
 }
 
 export interface RequestRow {
@@ -361,7 +363,12 @@ async function sendGoogleSheet(
 
 async function dispatchChannel(channel: NotificationChannel, msg: NotificationMessage, vars: PrefixVars) {
   try {
-    const prefix = channel.custom_prefix ? applyPrefixTemplate(channel.custom_prefix, vars) : null
+    const prefix = resolvePrefix(
+      channel.custom_prefix,
+      channel.platform === 'discord' ? channel.discord_lock_prefixes : null,
+      msg.lockLevel,
+      vars,
+    )
     if (channel.platform === 'slack' && channel.webhook_url) await sendSlack(channel.webhook_url, msg, prefix)
     if (channel.platform === 'slack_threaded') await sendSlackThreaded(channel, msg, prefix)
     if (channel.platform === 'discord' && channel.webhook_url)
@@ -467,8 +474,13 @@ export async function sendTestMessage(
       title: `Test Notification — ${channel.label}`,
       color: 0x2ecc71,
       permalink: 'https://www.waze.com/editor',
-      // Matches the lock_level var above, so a Discord (Bot) channel's L3 emoji shows in the test.
-      lockLevel: channel.platform === 'discord_bot' && channel.discord_lock_emojis ? 3 : null,
+      // Matches the lock_level var above, so a Discord (Bot) channel's L3 emoji, or a Discord
+      // webhook's L3 prefix, shows in the test.
+      lockLevel:
+        (channel.platform === 'discord_bot' && channel.discord_lock_emojis) ||
+        (channel.platform === 'discord' && channel.discord_lock_prefixes)
+          ? 3
+          : null,
       notes: `This is a test message from WME Requests, confirming the "${channel.label}" channel is configured correctly.`,
       submittedBy: null,
       editorRank: null,
